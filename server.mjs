@@ -14,6 +14,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { config, publicConfig } from "./lib/config.mjs";
+import {StorageError} from "./lib/storage.mjs";
 import {
   APP_DIR,
   NOTES_DIR,
@@ -120,7 +121,7 @@ async function route(req, res) {
   }
 
   if (resource === "notes" && !name) {
-    if (method === "GET") return send(res, 200, { notesDir: NOTES_DIR, statuses: STATUSES, notes: await listNotes() });
+    if (method === "GET") return send(res, 200, { notesDir: config.storage.type==="http"?"Configured storage API":NOTES_DIR, statuses: STATUSES, notes: await listNotes() });
     if (method === "POST") return send(res, 201, await createNote(await readJson(req)));
   }
   if (resource === "notes" && name) {
@@ -149,8 +150,9 @@ async function route(req, res) {
 
 const server = createServer((req, res) => {
   route(req, res).catch((err) => {
-    if (!(err instanceof NoteError)) log("error", err);
-    send(res, err instanceof NoteError ? err.status : 500, { error: err instanceof NoteError ? err.message : "Server error, see logs\\server.log" });
+    const expected=err instanceof NoteError || err instanceof StorageError;
+    if (!expected) log("error", err);
+    send(res, expected ? err.status : 500, { error: expected ? err.message : "Server error, see logs\\server.log" });
   });
 });
 
