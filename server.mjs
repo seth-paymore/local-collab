@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { config, publicConfig } from "./lib/config.mjs";
 import {StorageError} from "./lib/storage.mjs";
+import {ImageError,readImageBody} from "./lib/images.mjs";
 import {
   APP_DIR,
   NOTES_DIR,
@@ -32,6 +33,8 @@ import {
   replaceRaw,
   search,
   updateMeta,
+  uploadImage,
+  readImage,
 } from "./lib/notes.mjs";
 
 const PUBLIC_DIR = join(APP_DIR, "public");
@@ -49,6 +52,8 @@ const log = (...parts) => console.log(new Date().toISOString(), ...parts);
 const STATIC = {
   "/": ["index.html", "text/html; charset=utf-8"],
   "/app.js": ["app.js", "text/javascript; charset=utf-8"],
+  "/images.mjs": ["images.mjs", "text/javascript; charset=utf-8"],
+  "/image-events.mjs": ["image-events.mjs", "text/javascript; charset=utf-8"],
   "/app.css": ["app.css", "text/css; charset=utf-8"],
   "/icon.svg": ["icon.svg", "image/svg+xml"],
   "/icon-192.png": ["icon-192.png", "image/png"],
@@ -62,7 +67,7 @@ const SECURITY_HEADERS = {
   "Referrer-Policy": "no-referrer",
   "Cache-Control": "no-store",
   "Content-Security-Policy":
-    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
 };
 
 function send(res, status, payload, type = "application/json; charset=utf-8") {
@@ -114,6 +119,19 @@ async function route(req, res) {
   const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
   if (parts[0] !== "api") return send(res, 404, { error: "Not found" });
   const [, resource, name, action] = parts;
+  if(resource==="notes" && name && action==="attachments") {
+    if(method==="POST" && parts.length===4) {
+      const {bytes}=await readImageBody(req);
+      const image=await uploadImage(name,bytes);
+      return send(res,image.created?201:200,image);
+    }
+    if(method==="GET" && parts.length===5) {
+      const image=await readImage(name,parts[4]);
+      res.writeHead(200,{...SECURITY_HEADERS,"Content-Security-Policy":"default-src 'none'; sandbox","Content-Type":image.type,"Content-Length":image.size,"Content-Disposition":`inline; filename="${image.id}"`,"Cross-Origin-Resource-Policy":"same-origin"});
+      return res.end(image.bytes);
+    }
+    return send(res,404,{error:"Image route not found"});
+  }
   if (resource === "config" && method === "GET") return send(res, 200, publicConfig());
 
   if (resource === "health" && method === "GET") {
@@ -150,7 +168,7 @@ async function route(req, res) {
 
 const server = createServer((req, res) => {
   route(req, res).catch((err) => {
-    const expected=err instanceof NoteError || err instanceof StorageError;
+    const expected=err instanceof NoteError || err instanceof StorageError || err instanceof ImageError;
     if (!expected) log("error", err);
     send(res, expected ? err.status : 500, { error: expected ? err.message : "Server error, see logs\\server.log" });
   });

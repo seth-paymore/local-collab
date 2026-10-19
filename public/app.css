@@ -358,3 +358,19 @@ dialog .or { margin: 0.5rem 0; }
 .a-4 { --c: #8a6900; }
 .a-5 { --c: #b34a78; }
 [hidden] { display: none !important; }
+
+.composer { padding: 0.7rem; margin: -0.7rem; border: 1px solid transparent; border-radius: 10px; }
+.composer.is-dragover { border: 1px dashed var(--accent); background: var(--accent-soft); }
+.attachment-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.attachment-toolbar button { font-size: 0.86rem; }
+.image-queue { display: grid; gap: 0.5rem; list-style: none; margin: 0; padding: 0; }
+.image-queue:empty { display: none; }
+.image-queue li { display: flex; align-items: center; gap: 0.65rem; padding: 0.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); min-width: 0; }
+.image-queue img { width: 68px; height: 52px; object-fit: contain; background: var(--code-bg); border-radius: 5px; }
+.image-queue li>span { min-width: 0; flex: 1; }
+.image-queue strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; }
+.image-queue small { display: block; color: var(--muted); font-size: 0.76rem; }
+.image-queue button { font-size: 0.8rem; }
+.note-image-link { display: block; width: fit-content; max-width: 100%; margin: 0.65rem 0; }
+.note-image { display: block; max-width: 100%; max-height: 480px; object-fit: contain; border: 1px solid var(--border); border-radius: 8px; background: var(--code-bg); }
+button:disabled { cursor: wait; opacity: 0.6; }

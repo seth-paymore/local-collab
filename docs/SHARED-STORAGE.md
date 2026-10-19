@@ -14,7 +14,7 @@ Dedicated storage hostname / Cloudflare TLS tunnel
             |
 Storage gateway on 127.0.0.1:4318
             |
-Private SQLite database: workspaces, credentials, notes, revision history
+Private SQLite database: workspaces, credentials, notes, images, revision history
 ```
 
 This service is separate from `server.mjs`. Do not expose the local application
@@ -24,12 +24,12 @@ notes. No hosted service is created by installing this code.
 
 ## Security boundary
 
-- Every list, read, history and write operation requires a client credential.
+- Every list, read, history, image and write operation requires a client credential.
   There are no anonymous note endpoints or browser sessions.
 - Each credential belongs to exactly one workspace and one principal. `read`
   permits reads and history; `write` also permits creation and replacement of
-  notes. A workspace is a shared collection: everyone with read access can read
-  **all** its notes. Use separate workspaces for separate audiences.
+  notes and image uploads. A workspace is a shared collection: everyone with read access can read
+  **all** its notes and images. Use separate workspaces for separate audiences.
 - Credentials contain 256 bits of random material. Only their SHA-256 digests
   are stored. Each has an expiry of 1 to 90 days, with 30 days as the default.
   Give each installation or agent its own credential. Host administration can
@@ -150,7 +150,18 @@ from shared notes. Private notes are never sent as ActiveCollab comments.
 ## History, recovery and credential administration
 
 The basic API remains `GET /notes`, `GET /notes/{name}` and conditional
-`PUT /notes/{name}`, relative to `/v1/workspaces/{workspace}`.
+`PUT /notes/{name}`, relative to `/v1/workspaces/{workspace}`. Authenticated
+image reads and conditional uploads use the [attachment contract](STORAGE.md#image-attachments).
+Images are immutable BLOBs scoped to a workspace and note. Creation records the
+credential ID and principal, and charges the original byte count plus record
+overhead against the workspace budget. Read-only clients cannot upload, including
+duplicate content. The 5 MiB image and 50-image/100 MiB per-note limits also apply.
+
+Version 1.2 upgrades a schema-1 database to schema 2 transactionally when it is
+opened, adding image storage while preserving notes, credentials and history.
+Take a snapshot before upgrading an existing service. New snapshots include
+image bytes automatically; a Markdown export alone does not. This upgrade does
+not start a gateway, select HTTP storage or move an installation's local files.
 
 Two additional authenticated read endpoints provide history:
 
