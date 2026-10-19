@@ -1,0 +1,14 @@
+{
+  "name": "local-collab",
+  "version": "1.0.0",
+  "description": "Local shared memory and task coordination for humans and AI agents",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.mjs",
+    "open": "node bin/open.mjs",
+    "test": "node --test"
+  }
+}

@@ -1,0 +1,9 @@
+node_modules/
+logs/
+*.tmp
+.env
+local-collab.config.json
+data/
+notes/
+ticket-notes/
+.cache/

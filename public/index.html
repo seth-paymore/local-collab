@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#2b55d4">
+  <title>Local Collab</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/app.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1><img src="/icon.svg" alt="" width="30" height="30">Local Collab</h1>
+    <span class="private-badge">Private · this computer only</span>
+    <button id="new-note" class="primary" type="button">New note</button>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <input id="search" type="search" placeholder="Search all notes  ( / )" aria-label="Search all notes" autocomplete="off">
+      <div id="status-filter" class="chips" role="group" aria-label="Filter by status"></div>
+      <nav id="note-list" aria-label="Notes"></nav>
+
+      <section class="ac-panel" aria-labelledby="ac-heading">
+        <div class="ac-head">
+          <h2 id="ac-heading">My ActiveCollab tickets</h2>
+          <button id="ac-refresh" class="ghost" type="button">Refresh</button>
+        </div>
+        <p id="ac-status" class="muted small"></p>
+        <ul id="ac-mine"></ul>
+      </section>
+    </aside>
+
+    <main id="main"></main>
+  </div>
+
+  <dialog id="new-dialog" closedby="any" aria-labelledby="new-dialog-title">
+    <form id="new-form" method="dialog">
+      <h2 id="new-dialog-title">New note</h2>
+      <label>Ticket number (optional tracker link)
+        <input name="ticket" inputmode="numeric" placeholder="123" autocomplete="off">
+      </label>
+      <p class="muted small or">or</p>
+      <label>Topic, for notes that are not tied to one ticket
+        <input name="topic" placeholder="Release planning" autocomplete="off">
+      </label>
+      <p id="new-error" class="error" role="alert"></p>
+      <div class="row-end">
+        <!-- type="button": Enter must submit Create, not the first button in the form. -->
+        <button class="ghost" type="button" data-action="close-dialog">Cancel</button>
+        <button class="primary" value="create">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+  <p id="toast" role="status" aria-live="polite"></p>
+</body>
+</html>
