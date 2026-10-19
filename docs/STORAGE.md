@@ -163,6 +163,9 @@ Records must return valid JSON and fit within the current 2 MB response limit.
 Authorization failures, malformed records and outages remain visible failures.
 A failed or timed-out PUT can have an uncertain upstream outcome; refresh before
 retrying rather than assuming the service did not save it.
+The CLI also refuses to replay a local API write after a dropped or ambiguous
+response. Direct-storage fallback for mutations is limited to a refused local
+connection, when no server accepted the request.
 
 ## Validation and remaining tradeoffs
 

@@ -75,6 +75,11 @@ async function call(method, path, body, offline) {
     return data;
   } catch (err) {
     if (err.fromServer || !offline) throw err;
+    // A dropped response can follow a committed write. Replaying it through
+    // storage directly would duplicate an entry or overwrite newer work.
+    if (method !== "GET" && err.cause?.code !== "ECONNREFUSED") {
+      throw new Error("The local API write outcome is uncertain. Read the latest note before retrying; no fallback write was attempted");
+    }
     usedFallback = true;
     return offline();
   }
