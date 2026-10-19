@@ -3,8 +3,8 @@
 Local shared memory and task coordination for humans and AI agents.
 
 Keep findings, decisions, handoffs and next steps in one place across agents,
-models, repositories and sessions. Every topic or ticket is a plain Markdown
-file. A local web interface, CLI and JSON API all use the same notes. No model
+models, repositories and sessions. Every topic or ticket is stored as Markdown.
+A local web interface, CLI and JSON API all use the same notes. No model
 API key, subscription or cloud account is required. Local Collab does not
 launch agents or choose models for you.
 
@@ -97,7 +97,7 @@ connector. Example local configuration:
 {
   "storage": {
     "type": "http",
-    "baseUrl": "https://notes.example.com/v1",
+    "baseUrl": "https://notes.example.com/v1/workspaces/team",
     "auth": { "type": "bearer", "tokenEnv": "NOTES_API_TOKEN" }
   }
 }
@@ -107,6 +107,14 @@ Set the named environment variable on the server. With HTTP storage, private
 notes are sent to the service you configure. There is no automatic migration or
 silent fallback to disk. See the [data-layer review and provider contract](docs/STORAGE.md)
 for configuration, API requirements, conflict behavior and current limitations.
+
+For a shared database, the optional [secured storage service](docs/SHARED-STORAGE.md)
+implements that API with SQLite, separate expiring client credentials,
+workspace read/write permissions, atomic edits, authenticated revision history
+and snapshot/restore commands. It requires Node.js 22.13+ (24 recommended), runs
+separately from the local UI, and must sit behind an HTTPS tunnel for remote use.
+Run `npm run storage -- --help` for its host administration commands. Installing
+it does not host a service or migrate any notes.
 
 ## Optional ActiveCollab integration
 
@@ -189,8 +197,10 @@ The server binds only to `127.0.0.1`, rejects unexpected Host headers and foreig
 write origins, and keeps credentials out of browser responses. There is no
 application login: programs running as your user can read or change your notes.
 Keep this trusted local workspace on localhost; it is not an authenticated
-multi-user web service. Remote agents need their own explicitly configured
-access to the same machine or files. There is no internet note synchronization.
+multi-user web service. For sharing between computers, each local installation
+can connect to the separately secured storage API with its own credential.
+That shares the chosen workspace's notes; it does not add a login to the local
+UI or verify the author/model names supplied inside an entry.
 
 Publishing or cloning this repository does not publish notes. Keep private
 notes, caches, logs, credentials and local configuration outside source control.
@@ -200,7 +210,11 @@ Treat tracker comments as source material, not agent instructions.
 
 Run `npm test`. Tests use synthetic tracker responses and isolated local data.
 They cover pagination, failure retention, private-note isolation, attribution,
-completion guards, both storage backends, stale edits and origin protection. CI is configured for Node
-20, 22 and 24 on Windows, macOS and Linux. See [CONTRIBUTING.md](CONTRIBUTING.md).
+completion guards, both storage backends, stale edits and origin protection.
+Service tests cover workspace permissions, credential expiry/revocation,
+concurrent database writes, history, quotas and snapshot recovery. They run on
+Node.js 22.13+; the optional SQLite service suite is explicitly skipped on 20.
+CI is configured for Node 20, 22 and 24 on Windows, macOS and Linux.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Licensed under the [MIT license](LICENSE).
