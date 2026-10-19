@@ -129,7 +129,10 @@ test('gateway rejects foreign hosts/origins, malformed requests, unsafe methods 
     assert.equal((await write('x', {'Content-Encoding': 'gzip'})).status, 415);
     assert.equal((await write('x', {'If-Match': '"arbitrary"'})).status, 400);
     assert.equal((await write('x'.repeat(MAX_RAW_BYTES + 1))).status, 413);
-    assert.equal((await write('x'.repeat(800001))).status, 413);
+    // The declared-size guard rejects before reading the body. Sending that body
+    // anyway can race the gateway's Connection: close response on macOS.
+    const oversized=await rawRequest(`${f.base}/notes/a.md`,{method:'PUT',headers:{Authorization:`Bearer ${f.writer.token}`,'Content-Type':'application/json','Content-Length':800001,'If-None-Match':'*'}});
+    assert.equal(oversized.status,413);
     const malformed = await rawRequest(`${f.base}/notes/a.md`, {method: 'PUT', headers: {Authorization: `Bearer ${f.writer.token}`, 'Content-Type': 'application/json', 'If-None-Match': '*'}}, '{not json');
     assert.equal(malformed.status, 400);
     assert.equal((await write('accepted')).status, 201);
