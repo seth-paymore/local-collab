@@ -7,6 +7,7 @@ data/
 notes/
 ticket-notes/
 .cache/
+.attachments/
 *.sqlite
 *.sqlite-*
 *.db

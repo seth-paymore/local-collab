@@ -2,6 +2,7 @@ import {createHash, randomBytes, randomUUID} from 'node:crypto';
 import {mkdir, open, chmod, rm, stat, copyFile} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import {dirname, resolve} from 'node:path';
+import {inspectImage,IMAGE_ID,MAX_NOTE_IMAGES,MAX_NOTE_IMAGE_BYTES} from '../lib/images.mjs';
 
 export const NOTE_NAME = /^[a-z0-9][a-z0-9-]{0,80}\.md$/;
 export const WORKSPACE = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -74,7 +75,19 @@ export async function openDatabase(path, {create = false, now = Date.now, maxNot
         COMMIT;
       `);
     }
-    if (db.prepare('PRAGMA user_version').get().user_version !== 1) throw new Error('Unsupported storage database schema');
+    const version=db.prepare('PRAGMA user_version').get().user_version;
+    if(version===1) {
+      db.exec(`BEGIN IMMEDIATE;
+        CREATE TABLE IF NOT EXISTS images (
+          workspace TEXT NOT NULL, name TEXT NOT NULL, id TEXT NOT NULL,
+          bytes BLOB NOT NULL, created INTEGER NOT NULL, principal TEXT NOT NULL,
+          credential_id TEXT NOT NULL REFERENCES credentials(id),
+          PRIMARY KEY(workspace,name,id), FOREIGN KEY(workspace,name) REFERENCES notes(workspace,name)
+        ) STRICT;
+        CREATE TRIGGER IF NOT EXISTS keep_images_update BEFORE UPDATE ON images BEGIN SELECT RAISE(ABORT,'Images are immutable'); END;
+        CREATE TRIGGER IF NOT EXISTS keep_images_delete BEFORE DELETE ON images BEGIN SELECT RAISE(ABORT,'Images are immutable'); END;
+        PRAGMA user_version=2; COMMIT;`);
+    }else if(version!==2)throw new Error('Unsupported storage database schema');
     db.exec('PRAGMA synchronous=FULL;');
   } catch (error) { db.close(); throw error; }
 
@@ -164,6 +177,28 @@ export async function openDatabase(path, {create = false, now = Date.now, maxNot
       const row = db.prepare('SELECT raw,revision,modified FROM revisions WHERE workspace=? AND name=? AND revision=?').get(workspace, name, revision);
       if (!row) throw new ServiceError(404, 'Revision not found');
       return record(row);
+    },
+    putImage(token,workspace,name,id,bytes) {
+      return transaction(()=>{
+        const actor=authorize(token,workspace,true);readRow(workspace,name);
+        const info=inspectImage(bytes,id);
+        const old=db.prepare('SELECT bytes FROM images WHERE workspace=? AND name=? AND id=?').get(workspace,name,id);
+        if(old){inspectImage(old.bytes,id);return {...info,created:false};}
+        const quota=db.prepare('SELECT count(*) AS n,coalesce(sum(length(bytes)),0) AS total FROM images WHERE workspace=? AND name=?').get(workspace,name);
+        if(quota.n>=MAX_NOTE_IMAGES || quota.total+bytes.length>MAX_NOTE_IMAGE_BYTES)throw new ServiceError(409,'This note has reached its image storage limit');
+        const cost=bytes.length+1024;
+        if(!db.prepare('UPDATE workspaces SET used_bytes=used_bytes+? WHERE id=? AND used_bytes+?<=?').run(cost,workspace,cost,maxWorkspaceBytes).changes)throw new ServiceError(409,'Workspace storage budget reached');
+        db.prepare('INSERT INTO images(workspace,name,id,bytes,created,principal,credential_id) VALUES(?,?,?,?,?,?,?)').run(workspace,name,id,bytes,now(),actor.principal,actor.id);
+        event('image.create',`${workspace}/${name}/${id}`);
+        return {...info,created:true};
+      });
+    },
+    getImage(token,workspace,name,id) {
+      authorize(token,workspace);readRow(workspace,name);
+      check(id,IMAGE_ID,'image identifier');
+      const row=db.prepare('SELECT bytes FROM images WHERE workspace=? AND name=? AND id=?').get(workspace,name,id);
+      if(!row)throw new ServiceError(404,'Image not found');
+      const bytes=Buffer.from(row.bytes);return {...inspectImage(bytes,id),bytes};
     },
     async backup(destination) {
       destination = resolve(destination);

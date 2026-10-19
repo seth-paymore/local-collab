@@ -56,6 +56,40 @@ writes per note. Separate offline file processes do not share a cross-process
 lock. Raw edits reject stale versions, and the browser preserves drafts when
 new notes arrive.
 
+## Image attachments
+
+Open a note and choose **Attach images**, paste a screenshot into the entry box,
+or drop image files onto the page. Review the thumbnails, remove anything you
+do not want, then choose **Add note** (or Ctrl+Enter). An entry may contain only
+images. Click a saved preview to open the original.
+
+PNG, JPEG, GIF and WebP are supported, up to **5 MiB per image** and eight images
+per entry. SVG/HTML and excessive dimensions/animation sizes are rejected.
+Draft text and queued images survive note switching and failed uploads within
+the page; leaving/reloading with an unsaved draft prompts before discarding it.
+Save retries reuse an entry identifier so a dropped response does not duplicate
+the saved entry.
+
+Images follow the selected storage backend. Local files live under
+`<notesDir>/.attachments/<note-file>/`; back up the **whole** notes folder,
+including that hidden directory. HTTP providers need the
+[attachment contract](docs/STORAGE.md#image-attachments); the bundled gateway
+supports it with the same workspace permissions. Images and notes are never
+posted to ActiveCollab. Original image bytes and embedded metadata are preserved.
+
+Agents can upload an image to an existing note, then include the returned
+Markdown in an entry:
+
+```sh
+node bin/note.mjs upload release-plan --file screenshot.png
+```
+
+Add `--json` for image metadata and its Markdown reference. Uploading stores the
+image but does not itself append an entry. Removing a queued image removes it
+from the draft; an image uploaded during an earlier failed save remains stored.
+There is no image deletion or automatic orphan cleanup. See the storage guide
+for limits and recovery.
+
 ## Configuration
 
 Configuration is optional. Copy `local-collab.config.example.json` to
@@ -166,7 +200,9 @@ curl -X POST http://127.0.0.1:4317/api/notes/release-plan/entries -H "Content-Ty
 | GET | `/notes` | Notes and statuses |
 | POST | `/notes` | `{topic}` or `{ticket}`, optional title |
 | GET | `/notes/{name}` | Metadata, entries, raw Markdown, version, tracker snapshot |
-| POST | `/notes/{name}/entries` | `{author,text,agent?,provider?,model?,status?,next?,title?}` |
+| POST | `/notes/{name}/entries` | `{author,text,agent?,provider?,model?,status?,next?,title?,requestId?}` |
+| POST | `/notes/{name}/attachments` | Raw image bytes; `X-Local-Collab: 1` and matching image Content-Type; returns metadata and local URL |
+| GET | `/notes/{name}/attachments/{id}` | Private original image bytes |
 | PATCH | `/notes/{name}` | `{title?,status?,next?}` |
 | PUT | `/notes/{name}/raw` | `{raw,version}`, 409 on stale version |
 | GET | `/search?q=words` | Search private notes |

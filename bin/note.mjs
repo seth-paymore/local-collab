@@ -15,7 +15,8 @@
  *   node bin\note.mjs health
  */
 import { parseArgs } from "node:util";
-import { readFileSync } from "node:fs";
+import { readFileSync,statSync } from "node:fs";
+import {inspectImage,MAX_IMAGE_BYTES} from "../lib/images.mjs";
 import * as notes from "../lib/notes.mjs";
 import { config } from "../lib/config.mjs";
 
@@ -27,6 +28,7 @@ const USAGE = `Usage:
            [--status active|waiting|blocked|parked|done] [--next "..."] [--title "..."]
   note set <ticket|topic> [--status ...] [--next "..."] [--title "..."]
   note show <ticket|topic>
+  note upload <ticket|topic> --file image.png [--json]
   note list [--status open|all|active|waiting|blocked|parked|done]
   note search <text>
   note health
@@ -128,6 +130,22 @@ async function main() {
     if (!Object.keys(meta()).length) throw new Error("Pass at least one of --status, --next or --title.");
     const note = await call("PATCH", `/notes/${encodeURIComponent(name)}`, meta(), () => notes.updateMeta(name, meta()));
     console.log(`Updated ${note.file}: status ${note.status}${note.next ? `, next: ${note.next}` : ""}`);
+  } else if(command === "upload") {
+    needName();if(!opts.file)throw new Error("Pass --file with an image path");
+    if(statSync(opts.file).size>MAX_IMAGE_BYTES)throw new Error("Each image must be at most 5 MiB");
+    const bytes=readFileSync(opts.file),info=inspectImage(bytes);
+    let image;
+    try {
+      const response=await fetch(`${BASE}/api/notes/${encodeURIComponent(name)}/attachments`,{method:"POST",headers:{"Content-Type":info.type,"X-Local-Collab":"1"},body:bytes});
+      image=await response.json().catch(()=>({}));
+      if(!response.ok)throw Object.assign(new Error(image.error??`HTTP ${response.status}`),{fromServer:true});
+    }catch(error){
+      if(error.fromServer)throw error;
+      if(error.cause?.code!=="ECONNREFUSED")throw new Error("The image upload outcome is uncertain. No fallback upload was attempted");
+      usedFallback=true;image=await notes.uploadImage(name,bytes);
+    }
+    const markdown=`![Image](${image.url})`;
+    console.log(opts.json?JSON.stringify({...image,markdown},null,2):markdown);
   } else if (command === "show") {
     needName();
     const note = await call("GET", `/notes/${encodeURIComponent(name)}`, undefined, () => notes.getNote(name));
@@ -158,7 +176,7 @@ async function main() {
     throw new Error(`Unknown command "${command}".\n\n${USAGE}`);
   }
 
-  if (usedFallback) console.error(`(The server at ${BASE} was not reachable, so this used the files directly.)`);
+  if (usedFallback) console.error(`(The server at ${BASE} was not reachable, so this used the configured storage directly.)`);
 }
 
 main().catch((err) => {

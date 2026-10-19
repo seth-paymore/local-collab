@@ -10,6 +10,8 @@ import {fileURLToPath} from 'node:url';
 import {openDatabase, restoreDatabase, MAX_RAW_BYTES} from '../storage-service/database.mjs';
 import {createStorageServer} from '../storage-service/http.mjs';
 import {createHttpStorage} from '../lib/storage.mjs';
+import {png,jpeg} from '../test-support/image-fixtures.mjs';
+import {inspectImage} from '../lib/images.mjs';
 
 const [major, minor] = process.versions.node.split('.').map(Number);
 const options = {timeout: 10000, skip: major < 22 || (major === 22 && minor < 13) ? 'Optional SQLite storage service requires Node.js 22.13+' : false};
@@ -127,7 +129,10 @@ test('gateway rejects foreign hosts/origins, malformed requests, unsafe methods 
     assert.equal((await write('x', {'Content-Encoding': 'gzip'})).status, 415);
     assert.equal((await write('x', {'If-Match': '"arbitrary"'})).status, 400);
     assert.equal((await write('x'.repeat(MAX_RAW_BYTES + 1))).status, 413);
-    assert.equal((await write('x'.repeat(800001))).status, 413);
+    // The declared-size guard rejects before reading the body. Sending that body
+    // anyway can race the gateway's Connection: close response on macOS.
+    const oversized=await rawRequest(`${f.base}/notes/a.md`,{method:'PUT',headers:{Authorization:`Bearer ${f.writer.token}`,'Content-Type':'application/json','Content-Length':800001,'If-None-Match':'*'}});
+    assert.equal(oversized.status,413);
     const malformed = await rawRequest(`${f.base}/notes/a.md`, {method: 'PUT', headers: {Authorization: `Bearer ${f.writer.token}`, 'Content-Type': 'application/json', 'If-None-Match': '*'}}, '{not json');
     assert.equal(malformed.status, 400);
     assert.equal((await write('accepted')).status, 201);
@@ -258,4 +263,59 @@ test('HTTP client bounds streamed responses before buffering an entire oversized
   const storage = createHttpStorage({baseUrl: 'https://storage.example', auth: {type: 'bearer', tokenEnv: 'TEST_TOKEN'}}, {env: {TEST_TOKEN: 'synthetic'}, fetch: fetcher});
   await assert.rejects(storage.list(), error => error.status === 502 && /oversized/.test(error.message));
   assert.ok(cancelled); assert.ok(chunks <= 6);
+});
+
+test('shared images enforce workspace roles, immutable content, budgets and snapshot recovery',options,async()=>{
+  const f=await fixture({database:{maxWorkspaceBytes:3500}});
+  try{
+    f.database.write(f.writer.token,'alpha','image.md','note',null);
+    const storage=createHttpStorage({baseUrl:f.base,auth:{type:'bearer',tokenEnv:'TEST_TOKEN'}},{env:{TEST_TOKEN:f.writer.token}});
+    const image=await storage.putImage('image.md',png);assert.equal(image.created,true);
+    assert.equal((await storage.putImage('image.md',png)).created,false);
+    assert.deepEqual((await storage.getImage('image.md',image.id)).bytes,png);
+    const url=`${f.base}/notes/image.md/attachments/${image.id}`;
+    for(const token of [null,f.outsider.token]){
+      const response=await fetch(url,{headers:token?{Authorization:`Bearer ${token}`}:{}});
+      assert.equal(response.status,token?403:401);
+    }
+    const read=await fetch(url,{headers:{Authorization:`Bearer ${f.reader.token}`}});assert.equal(read.status,200);assert.equal(read.headers.get('cross-origin-resource-policy'),'same-origin');
+    const denied=await fetch(url,{method:'PUT',headers:{Authorization:`Bearer ${f.reader.token}`,'If-None-Match':'*','Content-Type':'image/png'},body:png});assert.equal(denied.status,403);
+    await assert.rejects(storage.putImage('image.md',jpeg),error=>error.status===409);
+    assert.equal((await storage.read('image.md')).raw,'note');
+    assert.equal((await fetch(url.replace(image.id,`${'a'.repeat(64)}.png`),{method:'PUT',headers:{Authorization:`Bearer ${f.writer.token}`,'If-None-Match':'*','Content-Type':'image/png'},body:png})).status,400);
+    const snapshot=join(f.folder,'image-backup.sqlite'),recovered=join(f.folder,'image-recovered.sqlite');
+    await f.database.backup(snapshot);await restoreDatabase(snapshot,recovered);
+    const restored=await openDatabase(recovered);
+    try{assert.deepEqual(restored.getImage(f.writer.token,'alpha','image.md',image.id).bytes,png);}finally{restored.close();}
+    f.database.revoke(f.reader.id);
+    assert.equal((await fetch(url,{headers:{Authorization:`Bearer ${f.reader.token}`}})).status,401);
+  }finally{await f.close();}
+});
+
+test('schema-one databases migrate image storage without changing existing notes or credentials',options,async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'collab-image-upgrade-')),path=join(folder,'legacy.sqlite');
+  let db=await openDatabase(path,{create:true});
+  try{
+    db.createWorkspace('team');const credential=db.issue({workspace:'team',principal:'agent',role:'write'});
+    db.write(credential.token,'team','legacy.md','Keep existing note',null);db.close();db=null;
+    const {DatabaseSync}=await import('node:sqlite');const legacy=new DatabaseSync(path);
+    legacy.exec('DROP TRIGGER keep_images_update; DROP TRIGGER keep_images_delete; DROP TABLE images; PRAGMA user_version=1;');legacy.close();
+    db=await openDatabase(path);
+    assert.equal(db.read(credential.token,'team','legacy.md').raw,'Keep existing note');
+    assert.equal(db.putImage(credential.token,'team','legacy.md',inspectImage(png).id,png).created,true);
+    assert.equal(db.credentials().length,1);assert.ok(db.integrity());
+  }finally{if(db)db.close();await rm(folder,{recursive:true,force:true});}
+});
+
+test('gateway awaits asynchronous authorization for image and note reads',options,async()=>{
+  const f=await fixture();
+  try{
+    const authorize=f.database.authorize;
+    f.database.authorize=async(...args)=>authorize(...args);
+    assert.equal((await f.call('/notes',{token:f.outsider.token})).status,403);
+    f.database.write(f.writer.token,'alpha','async.md','note',null);
+    const image=f.database.putImage(f.writer.token,'alpha','async.md',inspectImage(png).id,png);
+    const response=await fetch(`${f.base}/notes/async.md/attachments/${image.id}`,{headers:{Authorization:`Bearer ${f.outsider.token}`}});
+    assert.equal(response.status,403);
+  }finally{await f.close();}
 });
