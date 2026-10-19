@@ -1,0 +1,34 @@
+const $=selector=>document.querySelector(selector);
+const escape=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const initial=[
+ {id:'123',title:'Ship the release',status:'Ready for review',next:'A human checks the release checklist, then accepts the work.',source:'ACTIVECOLLAB · #123',entries:[{author:'Reviewer',provider:'Anthropic',model:'Claude',avatar:'C',color:'clay',time:'10:24',text:'Reviewed the authentication boundary. Keep the retry behavior; the regression covers the expired-session case.',tag:'Decision recorded'},{author:'Builder',provider:'OpenAI',model:'Codex',avatar:'</>',color:'blue',time:'10:31',text:'Picked up the review context. Regression added and local checks passed. The acceptance checklist is ready.',tag:'Next: human acceptance'}]},
+ {id:'124',title:'Trace a slow query',status:'In progress',next:'Compare individual reads against the target and record the outliers.',source:'ACTIVECOLLAB · #124',entries:[{author:'Investigator',provider:'Google',model:'Gemini',avatar:'✦',color:'purple-avatar',time:'09:15',text:'The aggregate timing hides one slow read. I recorded the query shape and an explain plan for the next session.',tag:'Evidence attached'},{author:'Reviewer',provider:'Anthropic',model:'Claude',avatar:'C',color:'clay',time:'09:42',text:'Confirmed the finding. Check the missing leading index before changing application behavior.',tag:'Next step clarified'}]},
+ {id:'release-plan',title:'Plan the next handoff',status:'Waiting',next:'Choose the next owner and leave a scoped question to investigate.',source:'LOCAL TOPIC · RELEASE PLAN',entries:[{author:'Human',provider:'Your workspace',model:'Decision',avatar:'H',color:'purple-avatar',time:'11:02',text:'Keep the next change small. Preserve the reviewed behavior and document what remains uncertain.',tag:'Scope agreed'},{author:'Builder',provider:'OpenAI',model:'Codex',avatar:'</>',color:'blue',time:'11:08',text:'Implementation context is saved. Another agent can continue without reconstructing the conversation.',tag:'Handoff ready'}]},
+];
+let tickets=structuredClone(initial),selected=0,handoffs=0;
+function renderDemo(){
+ $('#demo-tickets').innerHTML=tickets.map((ticket,index)=>`<button class="demo-ticket" data-ticket="${index}" aria-pressed="${index===selected}"><span class="ticket-meta"><span>${ticket.id==='release-plan'?'TOPIC':`#${ticket.id}`}</span><span>◇</span></span><strong>${escape(ticket.title)}</strong><p>${escape(ticket.next)}</p></button>`).join('');
+ const ticket=tickets[selected];$('#demo-id').textContent=ticket.source;$('#demo-title').textContent=ticket.title;$('#demo-next').textContent=ticket.next;
+ $('#demo-status').textContent=ticket.status;$('#demo-status').className=`tag ${selected===0?'green':'purple-tag'}`;
+ $('#demo-entries').innerHTML=ticket.entries.map(entry=>`<div class="demo-entry"><span class="avatar ${entry.color}">${escape(entry.avatar)}</span><div class="entry-content"><div class="demo-entry-head"><strong>${escape(entry.author)}</strong><span class="model">${escape(entry.model)} · ${escape(entry.provider)}</span><time>${escape(entry.time)}</time></div><p>${escape(entry.text)}</p><span class="entry-tag">${escape(entry.tag)}</span></div></div>`).join('');
+}
+$('#demo-tickets').addEventListener('click',event=>{const button=event.target.closest('[data-ticket]');if(button){selected=Number(button.dataset.ticket);renderDemo();}});
+$('#handoff').addEventListener('click',()=>{
+ handoffs++;const ticket=tickets[selected];const names=[['Reviewer','Anthropic','Claude','C','clay'],['Builder','OpenAI','Codex','</>','blue'],['Checker','Google','Gemini','✦','purple-avatar']];const author=names[(handoffs-1)%names.length];
+ ticket.entries.push({author:author[0],provider:author[1],model:author[2],avatar:author[3],color:author[4],time:'DEMO',text:'I read the earlier findings. My next step is recorded here so the following session can continue from the same context.',tag:`Synthetic handoff ${handoffs}`});
+ if(ticket.entries.length>4)ticket.entries.splice(2,1);renderDemo();
+});
+$('#reset-demo').addEventListener('click',()=>{tickets=structuredClone(initial);selected=0;handoffs=0;renderDemo();});
+const storage={
+ filesystem:{code:'{\n  "author": "Human",\n  "notesDir": "/your/private/notes",\n  "storage": {\n    "type": "filesystem"\n  }\n}',badge:'DEFAULT BACKEND',path:'Markdown',note:'No database to set up. Back up the folder using the tools you already trust.',benefit:'Readable files. No cloud account. No model keys.'},
+ http:{code:'{\n  "storage": {\n    "type": "http",\n    "baseUrl": "https://notes.example.com/v1",\n    "auth": {\n      "type": "bearer",\n      "tokenEnv": "NOTES_API_TOKEN"\n    }\n  }\n}',badge:'YOUR AUTHENTICATED API',path:'Your API',note:'Notes are sent to the service you configure. Your API can use SQLite, Postgres or another database behind the documented contract.',benefit:'Server-side credentials. Conditional writes. No silent fallback.'}
+};
+function selectStorage(type){
+ const content=storage[type];document.querySelectorAll('[data-storage]').forEach(button=>{const active=button.dataset.storage===type;button.setAttribute('aria-selected',active);button.tabIndex=active?0:-1;});
+ $('#storage-panel').setAttribute('aria-labelledby',type==='http'?'tab-api':'tab-files');$('#storage-code').textContent=content.code;$('#storage-badge').textContent=content.badge;$('#path-storage').textContent=content.path;$('#storage-note').textContent=content.note;$('#storage-benefit').textContent=content.benefit;
+}
+document.querySelectorAll('[data-storage]').forEach(button=>{button.addEventListener('click',()=>selectStorage(button.dataset.storage));button.addEventListener('keydown',event=>{if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key)){event.preventDefault();const type=event.key==='Home'?'filesystem':event.key==='End'?'http':button.dataset.storage==='http'?'filesystem':'http';selectStorage(type);document.querySelector(`[data-storage="${type}"]`).focus();}});});
+$('.menu').addEventListener('click',()=>{const expanded=$('.menu').getAttribute('aria-expanded')==='true';$('.menu').setAttribute('aria-expanded',!expanded);$('#nav-links').classList.toggle('open',!expanded);});
+document.querySelectorAll('#nav-links a').forEach(link=>link.addEventListener('click',()=>{$('.menu').setAttribute('aria-expanded','false');$('#nav-links').classList.remove('open');}));
+$('#copy-install').addEventListener('click',async()=>{try{await navigator.clipboard.writeText('git clone https://github.com/seth-paymore/local-collab.git\ncd local-collab\nnpm start');$('#copy-install').textContent='Copied ✓';$('#copy-status').textContent='Installation commands copied.';}catch{$('#copy-status').textContent='Select the terminal commands and copy them manually.';$('#copy-install').textContent='Select & copy';}});
+renderDemo();selectStorage('filesystem');

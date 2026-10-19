@@ -29,7 +29,7 @@ test('fresh standalone installation supports model attribution without tracker c
       const response=await fetch(base+path,{method,headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
       return {status:response.status,data:await response.json()};
     };
-    assert.deepEqual((await request('/config')).data,{author:'Reviewer',activeCollabEnabled:false});
+    assert.deepEqual((await request('/config')).data,{author:'Reviewer',activeCollabEnabled:false,storage:{type:'filesystem',label:'Markdown files'}});
     const ac=(await request('/activecollab')).data;
     assert.equal(ac.enabled,false); assert.equal(ac.mine.length,0);
     assert.equal((await request('/activecollab/refresh','POST',{})).status,503);
