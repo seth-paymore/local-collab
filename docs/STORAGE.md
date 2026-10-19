@@ -75,7 +75,11 @@ not have a cross-process filesystem lock; this remains a known limitation.
 
 Use this adapter when you want a different underlying database or storage system.
 Your service may use SQLite, Postgres, object storage or another implementation;
-Local Collab uses the contract below. Direct database drivers are not bundled.
+Local Collab uses the contract below. The client does not connect directly to a
+database. An optional [secured SQLite gateway](SHARED-STORAGE.md) is bundled for
+shared workspaces, with client credentials, read/write roles, authenticated
+revision history and snapshot recovery. It is a separate host process, not an
+authentication layer for the local UI.
 
 ```json
 {
@@ -173,10 +177,13 @@ Tests exercise a real local HTTP fixture with bearer/API-key authentication,
 complete note workflows, serial handoffs, search, stale-write conflicts, outage
 behavior, redirect rejection, raw-content preservation and no disk fallback.
 These verify the adapter contract; they do not certify an arbitrary external
-service's own authorization, backups or atomic write implementation.
+service's own authorization, backups or atomic write implementation. The bundled
+gateway has additional real HTTP/SQLite tests for its access boundaries,
+concurrent writes, revision history, limits and snapshot recovery. Its deployment
+and operational requirements are covered in the [shared storage guide](SHARED-STORAGE.md).
 
 The current design reads note contents to build lists and search results, with
 at most eight reads in flight. Search reuses those reads within each query. A large
 remote collection will need an indexed query extension or batching; changing
 storage alone does not supply server-side search. Explicit migration tooling,
-cross-process filesystem locks and direct database adapters remain future work.
+cross-process filesystem locks and direct database clients remain future work.
