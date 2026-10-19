@@ -2,6 +2,8 @@
 // markdown files; the files stay the source of truth.
 
 let AUTHOR = "Human";
+let storageLabel="Markdown files";
+let storageType="filesystem";
 const POLL_MS = 10_000;
 
 const state = {
@@ -251,7 +253,7 @@ function renderAc() {
 function welcome() {
   $("#main").innerHTML = `<div class="welcome">
     <h2>Private ticket notes</h2>
-    <p>Each note is a markdown file in <code>${esc(state.notesDir)}</code>. People and agents share the same files, so their notes appear here next to yours.</p>
+    <p>${storageType==="http"?`Notes are stored through ${esc(storageLabel)}.`:`Each note is a Markdown file in <code>${esc(state.notesDir)}</code>.`} People and agents use the same note collection, so their entries appear here next to yours.</p>
     <p>Refresh pulls ticket details, comments and subtasks. Private notes stay on this computer. Completion is sent to ActiveCollab only through its separate confirmation.</p>
     <p><button type="button" class="primary" data-action="new">New note</button></p>
   </div>`;
@@ -334,7 +336,7 @@ function renderNote(note) {
     <form class="composer" id="composer">
       <label for="entry" class="visually-hidden">New entry</label>
       <textarea id="entry" name="text" placeholder="Add a note. Markdown works. Ctrl+Enter saves."></textarea>
-      <div class="composer-foot"><span class="muted">Saved to this computer only, as ${esc(AUTHOR)}.</span><button class="primary" type="submit">Add note</button></div>
+      <div class="composer-foot"><span class="muted">Saved to ${esc(storageLabel)}, as ${esc(AUTHOR)}.</span><button class="primary" type="submit">Add note</button></div>
     </form>
     <ol class="timeline">${entries.map(entryItem).join("") || `<li class="empty">No entries yet.</li>`}</ol>
     <details class="raw" id="raw">
@@ -591,5 +593,8 @@ setInterval(poll, POLL_MS);
 
 const settings = await api("/config");
 AUTHOR = settings.author;
+storageLabel=settings.storage.label;
+storageType=settings.storage.type;
+$(".private-badge").textContent=storageType==="http"?"Configured storage · local interface":"Private · this computer only";
 await Promise.all([loadList(), loadAc()]);
 await openFromHash();
