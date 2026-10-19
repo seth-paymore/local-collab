@@ -1,5 +1,7 @@
 // Local Collab page. Everything is rendered from the server's view of the
 // markdown files; the files stay the source of truth.
+import {MAX_IMAGE_BYTES,IMAGE_MARKDOWN,imageMarkdown,imageHtml,imageType} from './images.mjs';
+import {installImageEvents} from './image-events.mjs';
 
 let AUTHOR = "Human";
 let storageLabel="Markdown files";
@@ -21,6 +23,50 @@ const $ = (selector, root = document) => root.querySelector(selector);
 
 const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ESCAPES[c]);
+const drafts=new Map();
+const draftFor=file=>{
+  if(!drafts.has(file))drafts.set(file,{text:'',images:[],requestId:crypto.randomUUID(),saving:false,queueing:0});
+  return drafts.get(file);
+};
+function rememberDraft() {
+  const file=$('#main .note')?.dataset.file;
+  if(file&&$('#entry')&&!draftFor(file).saving)draftFor(file).text=$('#entry').value;
+}
+function renderImageQueue() {
+  const file=$('#main .note')?.dataset.file,queue=$('#image-queue');if(!file||!queue)return;
+  const draft=draftFor(file),busy=draft.saving||draft.queueing>0;
+  queue.innerHTML=draft.images.map(item=>`<li><img src="${esc(item.preview)}" alt="Preview of ${esc(item.file.name)}"><span><strong>${esc(item.file.name||'Screenshot')}</strong><small>${(item.file.size/1024).toFixed(0)} KiB · ${item.uploaded?'Uploaded; ready to save':item.uploading?'Uploading…':'Ready to attach'}</small></span><button type="button" data-remove-image="${item.key}" aria-label="Remove ${esc(item.file.name||'image')} from draft" ${draft.saving?'disabled':''}>Remove</button></li>`).join('');
+  $('#composer').setAttribute('aria-busy',String(busy));
+  $('#composer').querySelectorAll('button,input,textarea').forEach(control=>{control.disabled=busy;});
+  $('#save-entry').textContent=draft.saving?'Saving…':draft.queueing?'Preparing images…':'Add note';
+}
+async function queueImages(files) {
+  const file=$('#main .note')?.dataset.file;
+  if(!file){toast('Open a note before attaching images',true);return;}
+  const draft=draftFor(file);if(draft.saving)return;
+  draft.queueing++;renderImageQueue();
+  try {
+  for(const image of files) {
+    if(draft.images.length>=8){toast('Attach up to 8 images per entry',true);break;}
+    if(!image.size||image.size>MAX_IMAGE_BYTES){toast('Each image must be at most 5 MiB',true);continue;}
+    const type=imageType(new Uint8Array(await image.slice(0,16).arrayBuffer()));
+    if(!type){toast('Use PNG, JPEG, GIF or WebP images',true);continue;}
+    if(draft.images.length>=8)break;
+    const all=[...drafts.values()].flatMap(value=>value.images);
+    if(all.reduce((size,item)=>size+item.file.size,0)+image.size>50*1024*1024){toast('Save or remove some queued images before adding more',true);break;}
+    if(draft.images.some(item=>item.file.name===image.name&&item.file.size===image.size&&item.file.lastModified===image.lastModified))continue;
+    draft.images.push({key:crypto.randomUUID(),file:image,type,preview:URL.createObjectURL(image),uploaded:null});
+    draft.requestId=crypto.randomUUID();
+  }
+  }catch(error){toast(`Could not prepare the image: ${error.message}`,true);}
+  finally{draft.queueing--;if(state.current?.file===file)renderImageQueue();}
+}
+async function uploadQueued(file,item) {
+  const response=await fetch(`/api/notes/${encodeURIComponent(file)}/attachments`,{method:'POST',headers:{'X-Local-Collab':'1','Content-Type':item.type},body:item.file});
+  const value=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(value.error??`Image upload failed (${response.status})`);
+  imageMarkdown(item.file.name,value.url);return value;
+}
 
 async function api(path, { method = "GET", body } = {}) {
   const headers = method === "GET" ? {} : { "X-Local-Collab": "1" };
@@ -93,8 +139,10 @@ const external = (href, label) => `<a href="${href}" target="_blank" rel="noopen
 function inline(text) {
   const held = [];
   const hold = (html) => `\u0000${held.push(html) - 1}\u0000`;
-  let s = esc(text);
-  s = s.replace(/`([^`]+)`/g, (_, code) => hold(`<code>${code}</code>`));
+  let s = String(text).replace(/\u0000/g,'');
+  s = s.replace(/`([^`]+)`/g, (_, code) => hold(`<code>${esc(code)}</code>`));
+  s = s.replace(IMAGE_MARKDOWN,(_,alt,path)=>hold(imageHtml(alt,path)));
+  s = esc(s);
   s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, href) => hold(external(href, label)));
   // Trailing punctuation belongs to the sentence, not the URL.
   s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)]*[^\s<).,;:!?'"])/g, (_, pre, href) => pre + hold(external(href, esc(shortUrl(href.replace(/&amp;/g, "&"))))));
@@ -254,7 +302,7 @@ function welcome() {
   $("#main").innerHTML = `<div class="welcome">
     <h2>Private ticket notes</h2>
     <p>${storageType==="http"?`Notes are stored through ${esc(storageLabel)}.`:`Each note is a Markdown file in <code>${esc(state.notesDir)}</code>.`} People and agents use the same note collection, so their entries appear here next to yours.</p>
-    <p>Refresh pulls ticket details, comments and subtasks. Private notes stay on this computer. Completion is sent to ActiveCollab only through its separate confirmation.</p>
+    <p>Refresh pulls ticket details, comments and subtasks. Private notes and images use your selected storage. Completion is sent to ActiveCollab only through its separate confirmation.</p>
     <p><button type="button" class="primary" data-action="new">New note</button></p>
   </div>`;
 }
@@ -312,8 +360,8 @@ function renderNote(note) {
   const prs = extractPrs(note.raw);
   const notAssigned = note.ac && !note.ac.assignedToMe && note.status === "active";
   // A re-render of the same note (new entries arrived) must not eat a draft.
-  const previous = $("#main .note");
-  const draft = previous?.dataset.file === note.file ? $("#entry")?.value ?? "" : "";
+  rememberDraft();
+  const draft=draftFor(note.file);
   $("#main").innerHTML = `<article class="note" data-file="${esc(note.file)}">
     <header>
       <p class="eyebrow">${note.ticket ? `#${esc(note.ticket)}` : "Topic note"}${acLine(note)}</p>
@@ -335,8 +383,10 @@ function renderNote(note) {
     <h2>Private working notes</h2>
     <form class="composer" id="composer">
       <label for="entry" class="visually-hidden">New entry</label>
-      <textarea id="entry" name="text" placeholder="Add a note. Markdown works. Ctrl+Enter saves."></textarea>
-      <div class="composer-foot"><span class="muted">Saved to ${esc(storageLabel)}, as ${esc(AUTHOR)}.</span><button class="primary" type="submit">Add note</button></div>
+      <textarea id="entry" name="text" placeholder="Add a note or paste a screenshot. Ctrl+Enter saves."></textarea>
+      <div class="attachment-toolbar"><button type="button" data-action="choose-images">Attach images</button><input id="image-files" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden><span class="muted small">Paste or drop images here · 5 MiB each</span></div>
+      <ul class="image-queue" id="image-queue" aria-label="Images in this draft"></ul>
+      <div class="composer-foot"><span class="muted">Saved to ${esc(storageLabel)}, as ${esc(AUTHOR)}.</span><button id="save-entry" class="primary" type="submit">Add note</button></div>
     </form>
     <ol class="timeline">${entries.map(entryItem).join("") || `<li class="empty">No entries yet.</li>`}</ol>
     <details class="raw" id="raw">
@@ -345,11 +395,11 @@ function renderNote(note) {
       <div class="composer-foot"><span class="muted">${esc(state.notesDir)}\\${esc(note.file)}</span><button type="button" data-action="save-raw">Save file</button></div>
     </details>
   </article>`;
-  if (draft) $("#entry").value = draft;
+  $('#entry').value=draft.text;renderImageQueue();
 }
 
 function isEditing() {
-  return Boolean($("#entry")?.value.trim() || $("#raw")?.open || document.activeElement?.matches?.("[data-field]"));
+  return Boolean($("#entry")?.value.trim() || (state.current&&draftFor(state.current.file).images.length) || (state.current&&draftFor(state.current.file).saving) || $("#raw")?.open || document.activeElement?.matches?.("[data-field]"));
 }
 
 function showStale() {
@@ -376,6 +426,7 @@ async function loadAc() {
 }
 
 async function openFromHash() {
+  rememberDraft();
   const file = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
   if (!file) {
     state.current = null;
@@ -432,19 +483,30 @@ async function createNote(body) {
 document.addEventListener("submit", async (event) => {
   if (event.target.id === "composer") {
     event.preventDefault();
-    const textarea = $("#entry");
-    const text = textarea.value;
-    if (!text.trim()) return;
+    const file=event.target.closest('.note').dataset.file;
+    const draft=draftFor(file),textarea=$('#entry');
+    if(draft.saving||draft.queueing)return;
+    draft.text=textarea.value;
+    if(!draft.text.trim()&&!draft.images.length)return;
+    draft.saving=true;renderImageQueue();
+    let committed=false;
     try {
-      state.current = await api(`/notes/${encodeURIComponent(state.current.file)}/entries`, { method: "POST", body: { text } });
-      textarea.value = "";
-      renderNote(state.current);
+      for(const item of draft.images) {
+        if(item.uploaded)continue;
+        item.uploading=true;if(state.current?.file===file)renderImageQueue();
+        try{item.uploaded=await uploadQueued(file,item);}finally{item.uploading=false;}
+      }
+      const text=[draft.text.trim(),...draft.images.map(item=>imageMarkdown(item.file.name,item.uploaded.url))].filter(Boolean).join('\n\n');
+      const saved=await api(`/notes/${encodeURIComponent(file)}/entries`,{method:'POST',body:{text,requestId:draft.requestId}});
+      committed=true;
+      draft.images.forEach(item=>URL.revokeObjectURL(item.preview));draft.images=[];draft.text='';draft.requestId=crypto.randomUUID();
+      if(state.current?.file===file){textarea.value='';state.current=saved;renderNote(saved);}
       await loadList();
       toast("Note saved");
-      $("#entry")?.focus();
+      if(state.current?.file===file)$("#entry")?.focus();
     } catch (err) {
-      toast(err.message, true);
-    }
+      toast(committed?'Note saved. The note list could not refresh.':`${err.message}. Your draft is kept.`, true);
+    }finally{draft.saving=false;if(state.current?.file===file)renderImageQueue();}
   }
   if (event.target.id === "new-form") {
     event.preventDefault();
@@ -467,7 +529,19 @@ document.addEventListener("submit", async (event) => {
   }
 });
 
+document.addEventListener('input',event=>{
+  if(event.target.id!=='entry')return;
+  const draft=draftFor(event.target.closest('.note').dataset.file);
+  draft.text=event.target.value;draft.requestId=crypto.randomUUID();
+});
+installImageEvents(document,queueImages,message=>toast(message,true));
+window.addEventListener('beforeunload',event=>{
+  rememberDraft();
+  if([...drafts.values()].some(draft=>draft.text.trim()||draft.images.length||draft.queueing)){event.preventDefault();event.returnValue='';}
+});
+
 document.addEventListener("change", async (event) => {
+  if(event.target.id==='image-files'){await queueImages(event.target.files);event.target.value='';return;}
   const field = event.target.dataset?.field;
   if (!field || !state.current) return;
   try {
@@ -501,6 +575,13 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("click", async (event) => {
   const target = event.target.closest("button");
   if (!target) return;
+  if(target.dataset.action==='choose-images'){$('#image-files').click();return;}
+  if(target.dataset.removeImage) {
+    const draft=draftFor(target.closest('.note').dataset.file);if(draft.saving)return;
+    const item=draft.images.find(image=>image.key===target.dataset.removeImage);
+    if(item)URL.revokeObjectURL(item.preview);
+    draft.images=draft.images.filter(image=>image!==item);draft.requestId=crypto.randomUUID();renderImageQueue();return;
+  }
   if (target.dataset.filter) {
     state.filter = target.dataset.filter;
     state.query = "";

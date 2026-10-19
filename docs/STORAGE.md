@@ -4,7 +4,7 @@ Local Collab keeps three kinds of data separate:
 
 | Data | Authority | Where it lives |
 | --- | --- | --- |
-| Working notes, attribution, local status and next steps | Your note collection | The configured note storage backend |
+| Working notes, images, attribution, local status and next steps | Your note collection | The configured note storage backend |
 | Ticket descriptions, discussions, subtasks and completion | ActiveCollab | Upstream tracker, with a derived local cache |
 | Credentials and connection settings | Your local installation | Environment variables and ignored local configuration |
 
@@ -48,7 +48,9 @@ The default backend remains Markdown files. The interface is intentionally small
   type, label, location,
   async list(),                         // validated note file names
   async read(name),                     // {raw, revision, modified}
-  async write(name, raw, priorRevision) // conditional write; null means create
+  async write(name, raw, priorRevision), // conditional write; null means create
+  async putImage(name, bytes),           // immutable, content-addressed image
+  async getImage(name, id)               // metadata and original bytes
 }
 ```
 
@@ -117,7 +119,7 @@ add authentication to the local UI; agent attribution is still self-reported.
 
 ## HTTP provider contract
 
-All paths below are appended to `baseUrl`. Requests accept JSON. Names are the
+All paths below are appended to `baseUrl`. Note requests accept JSON. Names are the
 validated filenames used by the application, such as `release-plan.md` or
 `ac-123.md`, not arbitrary filesystem paths.
 
@@ -170,6 +172,59 @@ retrying rather than assuming the service did not save it.
 The CLI also refuses to replay a local API write after a dropped or ambiguous
 response. Direct-storage fallback for mutations is limited to a refused local
 connection, when no server accepted the request.
+
+## Image attachments
+
+The local API accepts a raw image with `POST /api/notes/{name}/attachments` and
+returns `{id,type,size,width,height,created,url}`. The note must already exist.
+Uploads require `X-Local-Collab: 1` and the matching image Content-Type (or
+`application/octet-stream`). Include `![description](url)` in an entry to display
+it. Images are not embedded as base64 in Markdown or sent to ActiveCollab.
+
+Filesystem storage keeps original bytes in
+`<notesDir>/.attachments/<filename>/<id>`. Back up and move the whole note
+collection, including this hidden directory. Copying Markdown alone leaves
+broken image references. IDs combine the SHA-256 of the bytes with a canonical
+`.png`, `.jpg`, `.gif` or `.webp` extension. Deduplication is per note.
+
+HTTP providers that support images must implement these authenticated routes,
+relative to their configured `baseUrl`:
+
+| Method | Path | Contract |
+| --- | --- | --- |
+| PUT | `/notes/{filename}/attachments/{id}` | Raw bytes, matching image Content-Type and `If-None-Match: *`. Atomically create an immutable image for an existing note; return `201` and `{id,type,size,width,height}`. Return `412` when that ID already exists. |
+| GET | `/notes/{filename}/attachments/{id}` | Return original bytes with the verified image Content-Type, or `404`. Apply the note's workspace read permission. |
+
+Write permission is required even for duplicate uploads. Validate the digest,
+format, size and note scope on the service, rather than trusting the client.
+Reject missing preconditions and unexpected paths. Send `Cache-Control: no-store`
+and `X-Content-Type-Options: nosniff` for private image responses. The client
+verifies returned metadata and bytes; after `412` it reads and verifies the
+existing image. Credentials, HTTPS, redirect rejection, bounded reads and failure
+without filesystem fallback apply to images as well as notes. A provider without
+these routes can still store text; image uploads fail visibly.
+
+Both bundled providers limit each image to 5 MiB, 8192 pixels per side and
+20 megapixels. Animation is limited to 200 frames and 100 million frame pixels.
+Each note has a budget of 50 distinct images and 100 MiB. The browser additionally
+allows eight images per entry and 50 MiB across queued drafts. The shared gateway
+charges images against its workspace budget too.
+
+Validation checks raster container structure and declared dimensions. It does
+not fully decode compressed pixels, strip embedded metadata or scan for malware.
+Use a maintained browser to view images from trusted collaborators. Rendering
+only permits Local Collab attachment paths; external image URLs do not cause
+tracking-image requests. Originals open separately with restrictive response
+headers.
+
+Uploading and appending an entry are separate operations. A failed save keeps
+the browser draft and reuses already-uploaded images on retry. Entry requests
+can include a UUID `requestId`; reusing it with the same content returns the
+existing entry, while different content fails with `409`. Drafts remain in
+memory when switching notes, and are not recovered after closing the page.
+Images uploaded before an interrupted save remain stored even if the draft is
+removed. There is no attachment deletion or automatic orphan cleanup, so old
+note revisions retain their references. Plan capacity and backups accordingly.
 
 ## Validation and remaining tradeoffs
 

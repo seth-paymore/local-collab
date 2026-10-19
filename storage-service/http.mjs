@@ -1,6 +1,7 @@
 import {createServer as httpServer} from 'node:http';
 import {randomUUID, createHash} from 'node:crypto';
 import {ServiceError, NOTE_NAME, WORKSPACE} from './database.mjs';
+import {IMAGE_ID,ImageError,readImageBody} from '../lib/images.mjs';
 
 const MAX_BODY_BYTES = 800000;
 const HEADERS = {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'"};
@@ -67,18 +68,33 @@ export function createStorageServer({database, publicOrigin, now = Date.now, req
       if (req.rawHeaders.filter((value, i) => i % 2 === 0 && value.toLowerCase() === 'authorization').length !== 1 || !/^Bearer lc_[A-Za-z0-9_-]{43}$/.test(authorization ?? '')) throw new ServiceError(401, 'Valid client credentials required');
       const token = authorization.slice(7);
       clientLimit(createHash('sha256').update(token).digest('hex'));
+      const imagePath=/^\/v1\/workspaces\/([a-z0-9-]+)\/notes\/([a-z0-9-]+\.md)\/attachments\/([a-f0-9]{64}\.(?:png|jpg|gif|webp))$/.exec(req.url);
+      if(imagePath) {
+        const [,workspace,name,id]=imagePath;
+        if(!WORKSPACE.test(workspace)||!NOTE_NAME.test(name)||!IMAGE_ID.test(id))throw new ServiceError(400,'Invalid image path');
+        await database.authorize(token,workspace,req.method==='PUT');
+        if(req.method==='PUT') {
+          if(req.headers['if-none-match']!=='*'||req.headers['if-match']!==undefined)throw new ServiceError(428,'Immutable image upload requires If-None-Match: *');
+          const {bytes}=await readImageBody(req);
+          const {created,...image}=await database.putImage(token,workspace,name,id,bytes);
+          return send(created?201:412,image);
+        }
+        const image=await database.getImage(token,workspace,name,id);
+        res.writeHead(200,{...HEADERS,'Content-Security-Policy':"default-src 'none'; sandbox",'Content-Type':image.type,'Content-Length':image.size,'Content-Disposition':`inline; filename="${image.id}"`,'Cross-Origin-Resource-Policy':'same-origin','X-Request-Id':requestId});
+        return res.end(image.bytes);
+      }
       // Match the raw target: no URL-normalized dot segments, encoded slashes or aliases.
       const match = /^\/v1\/workspaces\/([a-z0-9-]+)\/notes(?:\/([a-z0-9-]+\.md)(?:\/(history|revisions\/([0-9a-f-]{36})))?)?(?:\?before=([0-9]+))?$/.exec(req.url);
       if (!match || !WORKSPACE.test(match[1]) || (match[2] && !NOTE_NAME.test(match[2])) || (match[5] && match[3] !== 'history')) throw new ServiceError(400, 'Invalid storage path');
       const [, workspace, name, action, revision, before] = match;
-      database.authorize(token, workspace, req.method === 'PUT');
+      await database.authorize(token, workspace, req.method === 'PUT');
       if (req.method === 'GET') {
-        if (!name) return send(200, {notes: database.list(token, workspace)});
+        if (!name) return send(200, {notes: await database.list(token, workspace)});
         if (action === 'history') {
-          const entries = database.history(token, workspace, name, before ? Number(before) : undefined);
+          const entries = await database.history(token, workspace, name, before ? Number(before) : undefined);
           return send(200, {entries, next: entries.length === 100 ? entries.at(-1).sequence : null});
         }
-        const value = action ? database.revision(token, workspace, name, revision) : database.read(token, workspace, name);
+        const value = action ? await database.revision(token, workspace, name, revision) : await database.read(token, workspace, name);
         return send(200, value, {ETag: value.version});
       }
       if (!name || action) throw new ServiceError(405, 'Method not allowed');
@@ -86,11 +102,11 @@ export function createStorageServer({database, publicOrigin, now = Date.now, req
       if (existing === undefined && missing === undefined) throw new ServiceError(428, 'A conditional write is required');
       if ((existing !== undefined && missing !== undefined) || (missing !== undefined && missing !== '*') || (existing !== undefined && !/^"[0-9a-f-]{36}"$/.test(existing))) throw new ServiceError(400, 'Invalid write precondition');
       const raw = await body(req);
-      const result = database.write(token, workspace, name, raw, missing === '*' ? null : existing);
+      const result = await database.write(token, workspace, name, raw, missing === '*' ? null : existing);
       const {created, ...value} = result;
       send(created ? 201 : 200, value, {ETag: value.version});
     } catch (error) {
-      const status = error instanceof ServiceError ? error.status : 500;
+      const status = error instanceof ServiceError || error instanceof ImageError ? error.status : 500;
       // Only redacted metadata leaves the handler. Never log tokens, URLs or note bodies.
       if (status !== 429) { try { onEvent({event: 'storage.request.failed', requestId, status}); } catch {} }
       if (!res.headersSent && !res.destroyed) send(status, {error: status === 500 ? 'Storage request failed' : error.message, requestId}, status === 401 ? {'WWW-Authenticate': 'Bearer realm="local-collab-storage"'} : status === 429 ? {'Retry-After': '60'} : status === 405 ? {Allow: 'GET, PUT'} : {});
