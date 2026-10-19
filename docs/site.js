@@ -21,7 +21,7 @@ $('#handoff').addEventListener('click',()=>{
 $('#reset-demo').addEventListener('click',()=>{tickets=structuredClone(initial);selected=0;handoffs=0;renderDemo();});
 const storage={
  filesystem:{code:'{\n  "author": "Human",\n  "notesDir": "/your/private/notes",\n  "storage": {\n    "type": "filesystem"\n  }\n}',badge:'DEFAULT BACKEND',path:'Markdown',note:'No database to set up. Back up the folder using the tools you already trust.',benefit:'Readable files. No cloud account. No model keys.'},
- http:{code:'{\n  "storage": {\n    "type": "http",\n    "baseUrl": "https://notes.example.com/v1",\n    "auth": {\n      "type": "bearer",\n      "tokenEnv": "NOTES_API_TOKEN"\n    }\n  }\n}',badge:'YOUR AUTHENTICATED API',path:'Your API',note:'Notes are sent to the service you configure. Your API can use SQLite, Postgres or another database behind the documented contract.',benefit:'Server-side credentials. Conditional writes. No silent fallback.'}
+ http:{code:'{\n  "storage": {\n    "type": "http",\n    "baseUrl": "https://notes.example.com/v1/workspaces/team",\n    "auth": {\n      "type": "bearer",\n      "tokenEnv": "NOTES_API_TOKEN"\n    }\n  }\n}',badge:'YOUR AUTHENTICATED API',path:'Your API',note:'Run the optional SQLite gateway with workspace credentials, read/write roles and edit history, or connect your own service. Remote hosting requires HTTPS.',benefit:'Workspace permissions. Conditional writes. No silent fallback.'}
 };
 function selectStorage(type){
  const content=storage[type];document.querySelectorAll('[data-storage]').forEach(button=>{const active=button.dataset.storage===type;button.setAttribute('aria-selected',active);button.tabIndex=active?0:-1;});

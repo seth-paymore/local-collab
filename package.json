@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node server.mjs",
     "open": "node bin/open.mjs",
+    "storage": "node storage-service/cli.mjs",
     "test": "node --test"
   }
 }

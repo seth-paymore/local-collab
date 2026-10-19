@@ -7,3 +7,9 @@ data/
 notes/
 ticket-notes/
 .cache/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.token
+*.token.*
