@@ -30,7 +30,7 @@ const USAGE = `Usage:
   note show <ticket|topic>
   note upload <ticket|topic> --file image.png [--json]
   note list [--status open|all|active|waiting|blocked|parked|done]
-  note search <text>
+  note search <words or "quoted phrase"> [--json]
   note health
 
 <ticket|topic> is a ticket number such as 123, or a topic slug such as release-plan.
@@ -164,6 +164,7 @@ async function main() {
   } else if (command === "search") {
     const q = rest.join(" ");
     const { results } = await call("GET", `/search?q=${encodeURIComponent(q)}`, undefined, async () => ({ results: await notes.search(q) }));
+    if (opts.json) return console.log(JSON.stringify(results, null, 2));
     if (!results.length) console.log(`Nothing matches "${q}".`);
     for (const r of results) {
       console.log(`${r.ticket ? `#${r.ticket}` : r.file}  ${r.title}`);
