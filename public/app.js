@@ -2,6 +2,7 @@
 // markdown files; the files stay the source of truth.
 import {MAX_IMAGE_BYTES,IMAGE_MARKDOWN,imageMarkdown,imageHtml,imageType} from './images.mjs';
 import {installImageEvents} from './image-events.mjs';
+import {highlightSearch} from './search-query.mjs';
 
 let AUTHOR = "Human";
 let storageLabel="Markdown files";
@@ -248,9 +249,7 @@ function noteItem(note) {
 }
 
 function highlight(text) {
-  const safe = esc(text);
-  const q = esc(state.query).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return q ? safe.replace(new RegExp(q, "gi"), (m) => `<mark>${m}</mark>`) : safe;
+  return highlightSearch(text,state.query);
 }
 
 function renderList() {
@@ -446,10 +445,13 @@ async function openFromHash() {
 }
 
 async function runSearch() {
-  if (state.query.length < 2) {
+  const query=state.query;
+  if (query.length < 2) {
     state.results = null;
   } else {
-    state.results = (await api(`/search?q=${encodeURIComponent(state.query)}`)).results;
+    const {results}=await api(`/search?q=${encodeURIComponent(query)}`);
+    if (query!==state.query) return;
+    state.results=results;
   }
   renderList();
 }
