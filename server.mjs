@@ -54,6 +54,7 @@ const STATIC = {
   "/app.js": ["app.js", "text/javascript; charset=utf-8"],
   "/images.mjs": ["images.mjs", "text/javascript; charset=utf-8"],
   "/image-events.mjs": ["image-events.mjs", "text/javascript; charset=utf-8"],
+  "/search-query.mjs": ["search-query.mjs", "text/javascript; charset=utf-8"],
   "/app.css": ["app.css", "text/css; charset=utf-8"],
   "/icon.svg": ["icon.svg", "image/svg+xml"],
   "/icon-192.png": ["icon-192.png", "image/png"],
