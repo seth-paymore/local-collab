@@ -16,6 +16,7 @@
   <header class="topbar">
     <h1><img src="/icon.svg" alt="" width="30" height="30">Local Collab</h1>
     <span class="private-badge">Private · this computer only</span>
+    <button id="shared-instructions" class="ghost" type="button">Shared instructions</button>
     <button id="new-note" class="primary" type="button">New note</button>
   </header>
 
@@ -53,6 +54,22 @@
         <!-- type="button": Enter must submit Create, not the first button in the form. -->
         <button class="ghost" type="button" data-action="close-dialog">Cancel</button>
         <button class="primary" value="create">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="instructions-dialog" aria-labelledby="instructions-title">
+    <form id="instructions-form">
+      <h2 id="instructions-title">Shared instructions</h2>
+      <p>Manage the rules used by your agents here. Bots sync this document into each workspace's AGENTS.md.</p>
+      <label for="instructions-text">Instructions</label>
+      <textarea id="instructions-text" spellcheck="false" rows="22"></textarea>
+      <p class="muted small">Bot command: <code>node bin/instructions.mjs sync --target /path/to/AGENTS.md</code></p>
+      <p id="instructions-error" class="error" role="alert"></p>
+      <div class="row-end">
+        <button id="instructions-close" type="button" class="ghost">Close</button>
+        <button id="instructions-reload" type="button" class="ghost">Reload</button>
+        <button id="instructions-save" type="submit" class="primary">Save instructions</button>
       </div>
     </form>
   </dialog>

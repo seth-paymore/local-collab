@@ -16,8 +16,10 @@ import { spawn } from "node:child_process";
 import { config, publicConfig } from "./lib/config.mjs";
 import {StorageError} from "./lib/storage.mjs";
 import {ImageError,readImageBody} from "./lib/images.mjs";
+import {createInstructions} from "./lib/instructions.mjs";
 import {
   APP_DIR,
+  storage,
   NOTES_DIR,
   STATUSES,
   NoteError,
@@ -43,6 +45,7 @@ const HOST = "127.0.0.1";
 const APP_URL = `http://${HOST}:${PORT}`;
 const AC_REFRESH_MS = 60 * 60 * 1000;
 const STARTED_AT = new Date().toISOString();
+const instructions=createInstructions(storage);
 
 const ALLOWED_HOSTS = new Set([`${HOST}:${PORT}`, `localhost:${PORT}`]);
 const ALLOWED_ORIGINS = new Set([...ALLOWED_HOSTS].map((h) => `http://${h}`));
@@ -54,6 +57,7 @@ const STATIC = {
   "/app.js": ["app.js", "text/javascript; charset=utf-8"],
   "/images.mjs": ["images.mjs", "text/javascript; charset=utf-8"],
   "/image-events.mjs": ["image-events.mjs", "text/javascript; charset=utf-8"],
+  "/instructions.mjs": ["instructions.mjs", "text/javascript; charset=utf-8"],
   "/app.css": ["app.css", "text/css; charset=utf-8"],
   "/icon.svg": ["icon.svg", "image/svg+xml"],
   "/icon-192.png": ["icon-192.png", "image/png"],
@@ -119,6 +123,10 @@ async function route(req, res) {
   const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
   if (parts[0] !== "api") return send(res, 404, { error: "Not found" });
   const [, resource, name, action] = parts;
+  if(resource==="instructions" && parts.length===2) {
+    if(method==="GET")return send(res,200,await instructions.get());
+    if(method==="PUT")return send(res,200,await instructions.set(await readJson(req)));
+  }
   if(resource==="notes" && name && action==="attachments") {
     if(method==="POST" && parts.length===4) {
       const {bytes}=await readImageBody(req);

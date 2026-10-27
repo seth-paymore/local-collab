@@ -14,3 +14,4 @@ ticket-notes/
 *.db-*
 *.token
 *.token.*
+AGENTS.md.local-collab*
