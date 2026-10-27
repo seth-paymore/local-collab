@@ -50,6 +50,23 @@ Metadata lives alongside the entry in Markdown; older notes remain readable.
 Long entries support `--file path/to/entry.txt` or standard input. `show` and
 `list` support `--json` for machine-readable output.
 
+Search is case-insensitive and matches all supplied words anywhere in the same
+private note, even across entries. Use double quotes around a phrase to require
+those words together. Exact ticket numbers and title matches rank first, followed
+by phrase matches in the note; recent updates break relevance ties. Results show
+up to three excerpts centered on matches, with source line numbers in the CLI/API.
+The browser highlights each matching term. Search includes completed notes and
+does not search the separate ActiveCollab comment cache.
+
+```sh
+node bin/note.mjs search login session --json
+node bin/note.mjs search '"session expiry" retry'
+node bin/note.mjs search '#123'
+```
+
+`search --json` returns the same ranked results as `GET /api/search?q=...`,
+including `file`, `ticket`, `title`, `status`, `score` and `hits` (`line`, `text`).
+
 When the server is unavailable, the CLI accesses the configured storage backend
 directly. Keep the server running for concurrent file writers: it serializes
 writes per note. Separate offline file processes do not share a cross-process
