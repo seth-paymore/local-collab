@@ -30,6 +30,9 @@
   accent-color: var(--accent);
 }
 
+#instructions-dialog { width: min(850px, calc(100vw - 40px)); max-height: 92vh; }
+#instructions-text { width: 100%; min-height: 280px; max-height: 55vh; font: 13px/1.5 ui-monospace, Consolas, monospace; resize: vertical; }
+
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #111316;

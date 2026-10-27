@@ -3,6 +3,7 @@
 import {MAX_IMAGE_BYTES,IMAGE_MARKDOWN,imageMarkdown,imageHtml,imageType} from './images.mjs';
 import {installImageEvents} from './image-events.mjs';
 import {highlightSearch} from './search-query.mjs';
+import {installInstructionsEditor} from './instructions.mjs';
 
 let AUTHOR = "Human";
 let storageLabel="Markdown files";
@@ -675,6 +676,7 @@ window.addEventListener("focus", poll);
 setInterval(poll, POLL_MS);
 
 const settings = await api("/config");
+installInstructionsEditor({api,toast});
 AUTHOR = settings.author;
 storageLabel=settings.storage.label;
 storageType=settings.storage.type;

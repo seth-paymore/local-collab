@@ -73,6 +73,35 @@ writes per note. Separate offline file processes do not share a cross-process
 lock. Raw edits reject stale versions, and the browser preserves drafts when
 new notes arrive.
 
+## Shared agent instructions
+
+Use **Shared instructions** in the top bar to manage the canonical workspace
+rules. This document uses the selected filesystem or authenticated HTTP storage,
+separately from note timelines and ActiveCollab. Personal rules remain private;
+do not commit them to this repository.
+
+For the first import, save an existing file with:
+
+```sh
+node bin/instructions.mjs set --file /path/to/AGENTS.md --version new
+node bin/instructions.mjs sync --target /path/to/AGENTS.md
+```
+
+Bots run `sync` before starting or resuming work and read the resulting file.
+`sync --check` reports drift without changing the instructions (exit 1 for drift).
+The sync receipt tracks the last managed copy; independent local changes stop
+the pull. Move those changes into Local Collab, or use `--replace-local` after
+reviewing them. Replaced files have an adjacent `.local-collab-backup`; do not
+commit the backup or receipt. Existing repository-specific AGENTS.md files are
+not merged or changed by this command.
+
+`node bin/instructions.mjs show --json` returns the current text and version.
+To replace the shared document from a file, pass that version to `set --version`.
+The API offers `GET /api/instructions` and `PUT /api/instructions` with
+`{text, version}`; a stale or missing version is rejected. The CLI can use the
+configured storage when the server is stopped. It does not replay uncertain
+writes after a dropped response.
+
 ## Image attachments
 
 Open a note and choose **Attach images**, paste a screenshot into the entry box,
