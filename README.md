@@ -29,6 +29,41 @@ checkout. Stopping the server does not remove them. With `npm start`, keep the
 terminal open. `npm run open` starts the background supervisor and opens a
 browser; Windows prefers an Edge app window.
 
+## Windows desktop app
+
+The optional Electron app has its own executable, Local Collab icon and taskbar
+identity. Opening it again brings the existing window forward. It uses the same
+localhost server and API as the browser and CLI; closing the window leaves the
+background server available to agents. Existing notes and configuration stay in
+their current locations.
+
+Build with Node.js 22.12 or later:
+
+```powershell
+cd desktop
+npm ci
+npm run package
+```
+
+Run `dist/Local Collab-win32-x64/Local Collab.exe` from the repository root. To
+connect an existing installation and create desktop and Start menu shortcuts:
+
+```powershell
+& '.\dist\Local Collab-win32-x64\Local Collab.exe' '--config=C:\path\to\local-collab.config.json' --install-shortcuts
+```
+
+The configuration path is remembered for later launches. Without an existing
+configuration, the app uses `local-collab.config.json` in its Windows application
+data folder and the standard notes location. Configured environment overrides
+still apply. The package contains source and icons only, never private settings,
+notes, credentials or logs. Keep the entire packaged folder together.
+
+Unpin the old browser/launcher icon, then pin the running Electron app. Its
+shortcut, executable and window share the Local Collab icon and Windows app ID.
+Previous desktop and Start menu shortcuts are backed up beside the originals as
+`.before-electron`. The browser/CLI and login service remain supported. This
+local build is unsigned; no automatic updates or public release are configured.
+
 ## Connect agents
 
 Give each agent the same local API or notes directory. Ask it to read the
