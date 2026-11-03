@@ -19,7 +19,15 @@ let desktop;
 let stage = 'initialize';
 try {
   for (const key of Object.keys(process.env)) if (/^ACTIVECOLLAB_|^ACTIVE_COLLAB$|^LOCAL_COLLAB_/.test(key)) delete process.env[key];
-  const { startDesktop } = await import(pathToFileURL(join(resolve(appRoot), 'application.mjs')).href);
+  const { startDesktop, startServerOnly } = await import(pathToFileURL(join(resolve(appRoot), 'application.mjs')).href);
+  const serverChild = process.argv.indexOf('--server-only-child');
+  if (serverChild >= 0) {
+    const result = await startServerOnly({ configPath: process.argv[serverChild + 1], profilePath: process.argv[serverChild + 2] });
+    assert.equal(BrowserWindow.getAllWindows().length, 0);
+    await writeFile(resultPath, JSON.stringify({ ok: true, ...result, windows: 0 }));
+    app.exit(0);
+    return;
+  }
   const second = process.argv.indexOf('--second-instance');
   if (second >= 0) {
     assert.equal(await startDesktop({ configPath: process.argv[second + 1], profilePath: process.argv[second + 2] }), null);
@@ -28,7 +36,7 @@ try {
     const folder = await mkdtemp(join(tmpdir(), 'local-collab-electron-smoke-'));
     const notesDir = join(folder, 'notes');
     await mkdir(notesDir);
-    const configPath = join(folder, 'config.json');
+    const configPath = join(folder, 'config with spaces.json');
     const profilePath = join(folder, 'profile');
     const portProbe = createServer(); portProbe.listen(0, '127.0.0.1'); await once(portProbe, 'listening');
     const port = portProbe.address().port;
@@ -37,7 +45,9 @@ try {
     const fixture = '---\nticket: ""\ntitle: "Desktop fixture"\nstatus: active\nnext: "Read fixture"\n---\n\n# Desktop fixture\n\n## 2026-11-03 12:00 Tester\n\nExisting notes stay readable.\n';
     await writeFile(join(notesDir, 'desktop-fixture.md'), fixture);
     stage = 'start actual desktop and background supervisor';
-    desktop = await startDesktop({ configPath, profilePath, argv: [] });
+    desktop = await startDesktop({ configPath, profilePath, argv: [], startupOptions: {
+      taskName: `Local Collab smoke ${process.pid}`, loginItemName: `${APP_ID}.smoke.${process.pid}`,
+    } });
     assert.ok(desktop.supervisorPid);
     assert.equal(resolve(desktop.health.notesDir), resolve(notesDir));
     stage = 'read existing note in real renderer';
@@ -64,6 +74,21 @@ try {
     const code = await Promise.race([once(child, 'exit').then(([exitCode]) => exitCode), new Promise((_, reject) => setTimeout(() => { child.kill(); reject(new Error('Second instance timed out')); }, 15000))]);
     assert.equal(code, 0);
     assert.equal(BrowserWindow.getAllWindows().length, 1);
+    stage = 'Settings button and trusted settings bridge';
+    assert.equal(await desktop.window.webContents.executeJavaScript('document.querySelector("#desktop-settings")?.textContent'), 'Settings');
+    assert.equal(await desktop.window.webContents.executeJavaScript('typeof window.desktopSettings'), 'undefined');
+    const settings = await desktop.openSettings();
+    const initial = await settings.webContents.executeJavaScript('window.desktopSettings.getState()');
+    assert.equal(initial.enabled, false); assert.equal(initial.editable, true);
+    stage = 'actual per-user startup registration and removal';
+    app.setAppUserModelId(`${APP_ID}.smoke.${process.pid}`);
+    assert.equal((await desktop.startup.setEnabled(true)).enabled, true);
+    assert.ok(desktop.startup.launch.args.some(arg => arg.includes('config with spaces.json')));
+    assert.equal((await desktop.startup.setEnabled(false)).enabled, false);
+    app.setAppUserModelId(APP_ID);
+    const invalid = await settings.webContents.executeJavaScript('window.desktopSettings.setStartup("yes").then(() => "accepted", error => error.message)');
+    assert.ok(invalid.includes('enabled or disabled'));
+    settings.destroy();
     stage = 'shortcut identity and icon readback';
     const shortcut = join(folder, 'Local Collab.lnk');
     assert.equal(shell.writeShortcutLink(shortcut, { target: process.execPath, icon: desktop.appDetails.appIconPath, iconIndex: 0, appUserModelId: APP_ID }), true);
@@ -79,13 +104,16 @@ try {
       'starts real background server with bundled Node', 'loads existing notes and keeps fixture unchanged',
       'sandboxed renderer has no Node or require', 'reuses healthy server', 'single-instance launch',
       'shortcut app ID and custom icon', 'server remains after window closes',
+      'visible Settings button and isolated IPC bridge', 'real Windows startup registration readback/removal',
     ] }, null, 2));
     process.kill(desktop.supervisorPid);
     process.kill(desktop.health.pid);
     app.exit(0);
   }
 } catch (error) {
-  await writeFile(resultPath, JSON.stringify({ ok: false, stage, error: error.stack }, null, 2));
+  const startupDebug = desktop?.startup ? app.getLoginItemSettings(desktop.startup.launch) : undefined;
+  if (desktop?.startup) { try { await desktop.startup.setEnabled(false); } catch {} }
+  await writeFile(resultPath, JSON.stringify({ ok: false, stage, error: error.stack, startupDebug }, null, 2));
   if (desktop?.supervisorPid) { try { process.kill(desktop.supervisorPid); } catch {} }
   if (desktop?.supervisorPid && desktop?.health.pid) { try { process.kill(desktop.health.pid); } catch {} }
   app.exit(1);

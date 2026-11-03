@@ -60,6 +60,12 @@ notes, credentials or logs. Keep the entire packaged folder together.
 
 Unpin the old browser/launcher icon, then pin the running Electron app. Its
 shortcut, executable and window share the Local Collab icon and Windows app ID.
+Use **Settings** in the desktop app to enable or disable starting the local
+server when you sign in to Windows. The server starts quietly, without opening
+the desktop window. An existing matching Local Collab login task is managed in
+place; a fresh installation uses a per-user Windows startup entry. Saving checks
+the Windows setting again, and disabling startup leaves the current server and
+notes available. You can also open Settings with Ctrl+,.
 Previous desktop and Start menu shortcuts are backed up beside the originals as
 `.before-electron`. The browser/CLI and login service remain supported. This
 local build is unsigned; no automatic updates or public release are configured.

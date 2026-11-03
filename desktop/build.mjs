@@ -13,7 +13,8 @@ if (dirname(stage) !== root) throw new Error('Unexpected build staging directory
 console.log(`Build staging directory: ${stage}`);
 await rm(stage, { recursive: true, force: true });
 await mkdir(join(stage, 'runtime'), { recursive: true });
-for (const name of ['main.mjs', 'application.mjs', 'policy.mjs']) await cp(join(here, name), join(stage, name));
+for (const name of ['main.mjs', 'application.mjs', 'policy.mjs', 'startup.mjs', 'startup-task.ps1',
+  'preload.cjs', 'settings-preload.cjs', 'settings.html', 'settings.css', 'settings.js']) await cp(join(here, name), join(stage, name));
 const metadata = JSON.parse(await readFile(join(here, 'package.json'), 'utf8'));
 const { devDependencies, scripts, ...manifest } = metadata;
 await writeFile(join(stage, 'package.json'), JSON.stringify(manifest, null, 2));

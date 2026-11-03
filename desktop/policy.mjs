@@ -6,6 +6,13 @@ export function desktopArguments(argv, packaged) {
   return argv.slice(packaged ? 1 : 2);
 }
 
+export function trustedFrame(event, contents, expectedUrl, sameOrigin = false) {
+  return Boolean(contents && !contents.isDestroyed() && event.sender === contents && event.senderFrame &&
+    event.senderFrame === contents.mainFrame && (sameOrigin
+      ? localNavigation(event.senderFrame.url, expectedUrl)
+      : event.senderFrame.url === expectedUrl));
+}
+
 export function localNavigation(value, base) {
   try { return new URL(value).origin === new URL(base).origin; }
   catch { return false; }
