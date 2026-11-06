@@ -19,6 +19,7 @@ import { readFileSync,statSync } from "node:fs";
 import {inspectImage,MAX_IMAGE_BYTES} from "../lib/images.mjs";
 import * as notes from "../lib/notes.mjs";
 import { config } from "../lib/config.mjs";
+import { readInbox } from '../lib/job-store.mjs';
 
 const BASE = `http://127.0.0.1:${config.port}`;
 
@@ -110,6 +111,18 @@ async function main() {
   if (opts.help || !command) {
     console.log(USAGE);
     return;
+  }
+  if (['show', 'list', 'search', 'health'].includes(command)) {
+    let pending = [];
+    try {
+      const response = await fetch(`${BASE}/api/jobs/inbox`, { signal: AbortSignal.timeout(1500) });
+      if (response.ok) pending = (await response.json()).runs;
+      else pending = await readInbox(config.jobsDir);
+    } catch { pending = await readInbox(config.jobsDir).catch(() => []); }
+    if (pending.length) {
+      const notice = `Job results awaiting agent review (${pending.length}):\n` + pending.slice(0, 10).map(run => `  ${run.name}: ${run.status}; read ${run.notificationNote}; run ${run.id}`).join('\n') + '\nUse node bin/job.mjs inbox for results and review <run-id> --author <name> after reviewing.\n';
+      (opts.json ? console.error : console.log)(notice);
+    }
   }
   const name = rest[0];
   const needName = () => {

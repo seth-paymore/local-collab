@@ -18,7 +18,7 @@ for (const name of ['main.mjs', 'application.mjs', 'policy.mjs', 'startup.mjs', 
 const metadata = JSON.parse(await readFile(join(here, 'package.json'), 'utf8'));
 const { devDependencies, scripts, ...manifest } = metadata;
 await writeFile(join(stage, 'package.json'), JSON.stringify(manifest, null, 2));
-for (const name of ['server.mjs', 'lib', 'public', 'assets/local-collab.ico', 'service/supervise.mjs', 'LICENSE']) {
+for (const name of ['server.mjs', 'lib', 'public', 'bin/job-worker.mjs', 'bin/job.mjs', 'bin/note.mjs', 'assets/local-collab.ico', 'service/supervise.mjs', 'LICENSE']) {
   const destination = join(stage, 'runtime', name);
   await mkdir(dirname(destination), { recursive: true });
   await cp(join(root, name), destination, { recursive: true });

@@ -2,10 +2,17 @@ const { ipcRenderer } = require('electron');
 window.addEventListener('DOMContentLoaded', () => {
   const header = document.querySelector('.topbar');
   if (!header) return;
-  const button = document.createElement('button');
-  button.id = 'desktop-settings';
-  button.className = 'ghost';
-  button.textContent = 'Settings';
-  button.addEventListener('click', () => ipcRenderer.send('desktop:open-settings'));
-  header.insertBefore(button, header.querySelector('#shared-instructions'));
+  let button = document.querySelector('#desktop-settings');
+  if (!button) {
+    button = document.createElement('button');
+    button.id = 'desktop-settings';
+    button.type = 'button';
+    button.className = 'ghost';
+    button.textContent = 'Settings';
+    header.insertBefore(button, header.querySelector('#shared-instructions'));
+  }
+  button.addEventListener('click', event => {
+    event.stopImmediatePropagation();
+    ipcRenderer.send('desktop:open-settings');
+  }, { capture: true });
 });

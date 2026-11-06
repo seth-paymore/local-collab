@@ -44,6 +44,13 @@ try {
     await writeFile(configPath, JSON.stringify({ port, notesDir, author: 'Tester' }));
     const fixture = '---\nticket: ""\ntitle: "Desktop fixture"\nstatus: active\nnext: "Read fixture"\n---\n\n# Desktop fixture\n\n## 2026-11-03 12:00 Tester\n\nExisting notes stay readable.\n';
     await writeFile(join(notesDir, 'desktop-fixture.md'), fixture);
+    const jobScript = join(folder, 'job-fixture.mjs');
+    await writeFile(jobScript, 'import {writeFile} from "node:fs/promises"; import {join} from "node:path"; await writeFile(join(process.env.LOCAL_COLLAB_JOB_DIR,"summary.md"),"Packaged job worker completed.");');
+    await mkdir(join(notesDir, '.jobs'), { recursive: true });
+    await writeFile(join(notesDir, '.jobs', 'definitions.json'), JSON.stringify({ schemaVersion: 1, jobs: [{
+      id: 'packaged-job', name: 'Packaged job', command: { executable: process.execPath, args: [jobScript], cwd: folder },
+      schedule: { kind: 'interval', minutes: 60 }, notificationNote: 'agent-inbox', timeoutMs: 10000,
+    }] }));
     stage = 'start actual desktop and background supervisor';
     desktop = await startDesktop({ configPath, profilePath, argv: [], startupOptions: {
       taskName: `Local Collab smoke ${process.pid}`, loginItemName: `${APP_ID}.smoke.${process.pid}`,
@@ -67,6 +74,19 @@ try {
     let starts = 0;
     assert.equal((await ensureServer(desktop.base, () => { starts++; })).pid, desktop.health.pid);
     assert.equal(starts, 0);
+    stage = 'packaged worker executes and writes the shared result note';
+    assert.equal(await desktop.window.webContents.executeJavaScript('document.querySelector("#jobs-open")?.textContent'), 'Jobs');
+    const jobResponse = await fetch(`${desktop.base}/api/jobs/packaged-job/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: crypto.randomUUID() }) });
+    assert.equal(jobResponse.status, 202);
+    let inbox;
+    for (let attempt = 0; attempt < 150; attempt++) {
+      inbox = await (await fetch(`${desktop.base}/api/jobs/inbox`)).json();
+      if (inbox.runs[0]?.notifiedAt) break;
+      await new Promise(resolveWait => setTimeout(resolveWait, 100));
+    }
+    assert.equal(inbox.runs[0]?.status, 'succeeded'); assert.ok(inbox.runs[0].notifiedAt);
+    const resultNote = await (await fetch(`${desktop.base}/api/notes/agent-inbox`)).json();
+    assert.equal(resultNote.entries.length, 1); assert.ok(resultNote.entries[0].text.includes('Packaged job worker completed.'));
     stage = 'second launch focuses existing window';
     const child = spawn(process.execPath, [fileURLToPath(import.meta.url), `--app-root=${appRoot}`, '--second-instance', configPath, profilePath], {
       stdio: 'ignore', windowsHide: true,
@@ -105,6 +125,7 @@ try {
       'sandboxed renderer has no Node or require', 'reuses healthy server', 'single-instance launch',
       'shortcut app ID and custom icon', 'server remains after window closes',
       'visible Settings button and isolated IPC bridge', 'real Windows startup registration readback/removal',
+      'packaged job worker runs through bundled Node and writes one pending result note',
     ] }, null, 2));
     process.kill(desktop.supervisorPid);
     process.kill(desktop.health.pid);

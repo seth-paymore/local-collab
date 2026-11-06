@@ -1,0 +1,95 @@
+name: Signed Windows desktop
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Reviewed full source commit to build and sign
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  desktop:
+    runs-on: windows-latest
+    environment: desktop-signing
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SOURCE_COMMIT: ${{ inputs.commit }}
+    steps:
+      - name: Require an immutable source revision and signing configuration
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          SIGNING_ENDPOINT: ${{ vars.SIGNING_ENDPOINT }}
+          SIGNING_ACCOUNT: ${{ vars.SIGNING_ACCOUNT }}
+          SIGNING_PROFILE: ${{ vars.SIGNING_PROFILE }}
+          SIGNING_PUBLISHER: ${{ vars.SIGNING_PUBLISHER }}
+        run: |
+          if ($env:SOURCE_COMMIT -cnotmatch '^[0-9a-f]{40}$') { throw 'A reviewed full commit SHA is required.' }
+          foreach ($name in @('AZURE_CLIENT_ID','AZURE_TENANT_ID','AZURE_SUBSCRIPTION_ID','SIGNING_ENDPOINT','SIGNING_ACCOUNT','SIGNING_PROFILE','SIGNING_PUBLISHER')) {
+            if (-not [Environment]::GetEnvironmentVariable($name)) { throw "Missing environment variable: $name" }
+          }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - run: npm test
+      - run: npm ci --prefix desktop
+      - run: npm run package --prefix desktop
+      - name: Azure login using the approved signing identity
+        uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac # v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign executable and bundled native libraries
+        uses: Azure/artifact-signing-action@b443cf8ea4124818d2ea9f043cba29fc3ec47b16 # v1
+        with:
+          endpoint: ${{ vars.SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist\Local Collab-win32-x64
+          files-folder-filter: exe,dll
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-powershell-credential: true
+          exclude-interactive-browser-credential: true
+      - name: Verify signatures and record package hashes
+        shell: pwsh
+        env:
+          SIGNING_PUBLISHER: ${{ vars.SIGNING_PUBLISHER }}
+        run: |
+          $root = (Resolve-Path 'dist/Local Collab-win32-x64').Path
+          $native = @(Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object { $_.Extension -in '.exe','.dll' })
+          if ($native.Count -eq 0) { throw 'No native files found.' }
+          foreach ($file in $native) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -cne $env:SIGNING_PUBLISHER -or -not $signature.TimeStamperCertificate) {
+              throw "Signature, publisher or timestamp verification failed: $($file.Name)"
+            }
+          }
+          $hashes = Get-ChildItem -LiteralPath $root -Recurse -File | ForEach-Object {
+            @{ path = [IO.Path]::GetRelativePath($root, $_.FullName); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+          }
+          @{ commit = $env:SOURCE_COMMIT; files = @($hashes) } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'package-verification.json')
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Local-Collab-Windows-signed-${{ inputs.commit }}
+          path: dist/Local Collab-win32-x64/
+          if-no-files-found: error
+          retention-days: 7

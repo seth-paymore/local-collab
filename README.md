@@ -68,9 +68,20 @@ the Windows setting again, and disabling startup leaves the current server and
 notes available. You can also open Settings with Ctrl+,.
 Previous desktop and Start menu shortcuts are backed up beside the originals as
 `.before-electron`. The browser/CLI and login service remain supported. This
-local build is unsigned; no automatic updates or public release are configured.
+local build is unsigned and Windows App Control can block it. See
+[signed desktop builds](docs/DESKTOP-SIGNING.md) for the manual signing workflow.
+No automatic updates or public release are configured.
+
+**Settings** is also available in the browser, showing the local server,
+storage and author configuration with a link to background jobs. Windows startup
+changes remain in the desktop Settings window.
 
 ## Connect agents
+
+Use **Jobs** to view background schedules and results awaiting agent review.
+The runner can execute trusted local commands, save their evidence and append a
+result to a shared note without an AI scheduler. See [Background jobs](docs/JOBS.md)
+for registration, daily schedules, recovery and agent handoff.
 
 Give each agent the same local API or notes directory. Ask it to read the
 relevant topic before working and record findings, decisions, validation and
