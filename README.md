@@ -29,7 +29,59 @@ checkout. Stopping the server does not remove them. With `npm start`, keep the
 terminal open. `npm run open` starts the background supervisor and opens a
 browser; Windows prefers an Edge app window.
 
+## Windows desktop app
+
+The optional Electron app has its own executable, Local Collab icon and taskbar
+identity. Opening it again brings the existing window forward. It uses the same
+localhost server and API as the browser and CLI; closing the window leaves the
+background server available to agents. Existing notes and configuration stay in
+their current locations.
+
+Build with Node.js 22.12 or later:
+
+```powershell
+cd desktop
+npm ci
+npm run package
+```
+
+Run `dist/Local Collab-win32-x64/Local Collab.exe` from the repository root. To
+connect an existing installation and create desktop and Start menu shortcuts:
+
+```powershell
+& '.\dist\Local Collab-win32-x64\Local Collab.exe' '--config=C:\path\to\local-collab.config.json' --install-shortcuts
+```
+
+The configuration path is remembered for later launches. Without an existing
+configuration, the app uses `local-collab.config.json` in its Windows application
+data folder and the standard notes location. Configured environment overrides
+still apply. The package contains source and icons only, never private settings,
+notes, credentials or logs. Keep the entire packaged folder together.
+
+Unpin the old browser/launcher icon, then pin the running Electron app. Its
+shortcut, executable and window share the Local Collab icon and Windows app ID.
+Use **Settings** in the desktop app to enable or disable starting the local
+server when you sign in to Windows. The server starts quietly, without opening
+the desktop window. An existing matching Local Collab login task is managed in
+place; a fresh installation uses a per-user Windows startup entry. Saving checks
+the Windows setting again, and disabling startup leaves the current server and
+notes available. You can also open Settings with Ctrl+,.
+Previous desktop and Start menu shortcuts are backed up beside the originals as
+`.before-electron`. The browser/CLI and login service remain supported. This
+local build is unsigned and Windows App Control can block it. See
+[signed desktop builds](docs/DESKTOP-SIGNING.md) for the manual signing workflow.
+No automatic updates or public release are configured.
+
+**Settings** is also available in the browser, showing the local server,
+storage and author configuration with a link to background jobs. Windows startup
+changes remain in the desktop Settings window.
+
 ## Connect agents
+
+Use **Jobs** to view background schedules and results awaiting agent review.
+The runner can execute trusted local commands, save their evidence and append a
+result to a shared note without an AI scheduler. See [Background jobs](docs/JOBS.md)
+for registration, daily schedules, recovery and agent handoff.
 
 Give each agent the same local API or notes directory. Ask it to read the
 relevant topic before working and record findings, decisions, validation and

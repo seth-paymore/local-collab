@@ -1,4 +1,6 @@
 node_modules/
+dist/
+.desktop-build/
 logs/
 *.tmp
 .env

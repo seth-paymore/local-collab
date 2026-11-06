@@ -377,3 +377,10 @@ dialog .or { margin: 0.5rem 0; }
 .note-image-link { display: block; width: fit-content; max-width: 100%; margin: 0.65rem 0; }
 .note-image { display: block; max-width: 100%; max-height: 480px; object-fit: contain; border: 1px solid var(--border); border-radius: 8px; background: var(--code-bg); }
 button:disabled { cursor: wait; opacity: 0.6; }
+.jobs-dialog { width: min(780px, 92vw); max-height: 84vh; overflow-y: auto; }
+.jobs-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.jobs-heading h2 { margin: 0; }
+.job-card { padding: 1rem; margin: .7rem 0; border: 1px solid var(--border); border-radius: 8px; }
+.job-card p { margin: .4rem 0; }
+.jobs-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; margin-top: .7rem; }
+.job-summary { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .86rem; }

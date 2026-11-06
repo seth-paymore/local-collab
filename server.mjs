@@ -16,6 +16,7 @@ import { spawn } from "node:child_process";
 import { config, publicConfig } from "./lib/config.mjs";
 import {StorageError} from "./lib/storage.mjs";
 import {ImageError,readImageBody} from "./lib/images.mjs";
+import {JobRunner, JobsError} from './lib/jobs.mjs';
 import {createInstructions} from "./lib/instructions.mjs";
 import {
   APP_DIR,
@@ -43,6 +44,8 @@ const PUBLIC_DIR = join(APP_DIR, "public");
 const PORT = config.port;
 const HOST = "127.0.0.1";
 const APP_URL = `http://${HOST}:${PORT}`;
+const jobs = new JobRunner({ directory: config.jobsDir, notify: addEntry, baseUrl: APP_URL });
+let jobsReady = false;
 const AC_REFRESH_MS = 60 * 60 * 1000;
 const STARTED_AT = new Date().toISOString();
 const instructions=createInstructions(storage);
@@ -59,6 +62,8 @@ const STATIC = {
   "/image-events.mjs": ["image-events.mjs", "text/javascript; charset=utf-8"],
   "/search-query.mjs": ["search-query.mjs", "text/javascript; charset=utf-8"],
   "/instructions.mjs": ["instructions.mjs", "text/javascript; charset=utf-8"],
+  "/jobs.mjs": ["jobs.mjs", "text/javascript; charset=utf-8"],
+  "/settings.mjs": ["settings.mjs", "text/javascript; charset=utf-8"],
   "/app.css": ["app.css", "text/css; charset=utf-8"],
   "/icon.svg": ["icon.svg", "image/svg+xml"],
   "/icon-192.png": ["icon-192.png", "image/png"],
@@ -105,6 +110,11 @@ function writeAllowed(req) {
   const json = (req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json");
   return json || req.headers["x-local-collab"] === "1";
 }
+async function readJobBody(req) {
+  const body = await readJson(req);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new JobsError(400, 'Job requests need a JSON object.');
+  return body;
+}
 
 async function route(req, res) {
   // Rejecting any other Host stops a site that rebinds its hostname to
@@ -124,6 +134,27 @@ async function route(req, res) {
   const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
   if (parts[0] !== "api") return send(res, 404, { error: "Not found" });
   const [, resource, name, action] = parts;
+  if (resource === 'jobs') {
+    if (!jobsReady) return send(res, 503, { error: jobs.error ?? 'Job runner is starting.' });
+    if (parts.length === 2 && method === 'GET') return send(res, 200, jobs.list());
+    if (name === 'inbox' && parts.length === 3 && method === 'GET') return send(res, 200, { runs: jobs.inbox() });
+    if (name === 'runs' && parts.length === 3 && method === 'GET') return send(res, 200, { runs: jobs.history() });
+    if (name === 'reload' && parts.length === 3 && method === 'POST') {
+      const body = await readJobBody(req); if (Object.keys(body).length) throw new JobsError(400, 'Reload does not accept job definitions.');
+      await jobs.tick(); return send(res, 200, jobs.list());
+    }
+    if (name === 'runs' && parts.length === 5 && parts[4] === 'review' && method === 'POST') {
+      const body = await readJobBody(req); if (Object.keys(body).some(key => key !== 'author')) throw new JobsError(400, 'Review needs a reviewer name only.');
+      return send(res, 200, await jobs.review(action, body.author));
+    }
+    if (action === 'runs' && parts.length === 4 && method === 'GET') return send(res, 200, { runs: jobs.history(name) });
+    if (action === 'run' && parts.length === 4 && method === 'POST') return send(res, 202, await jobs.run(name, await readJson(req)));
+    if (action === 'pause' && parts.length === 4 && method === 'POST') {
+      const body = await readJobBody(req); if (Object.keys(body).some(key => key !== 'paused')) throw new JobsError(400, 'Pause needs a boolean setting only.');
+      return send(res, 200, await jobs.pause(name, body.paused));
+    }
+    return send(res, 404, { error: 'Job route not found.' });
+  }
   if(resource==="instructions" && parts.length===2) {
     if(method==="GET")return send(res,200,await instructions.get());
     if(method==="PUT")return send(res,200,await instructions.set(await readJson(req)));
@@ -177,7 +208,7 @@ async function route(req, res) {
 
 const server = createServer((req, res) => {
   route(req, res).catch((err) => {
-    const expected=err instanceof NoteError || err instanceof StorageError || err instanceof ImageError;
+    const expected=err instanceof NoteError || err instanceof StorageError || err instanceof ImageError || err instanceof JobsError;
     if (!expected) log("error", err);
     send(res, expected ? err.status : 500, { error: expected ? err.message : "Server error, see logs\\server.log" });
   });
@@ -216,9 +247,12 @@ server.on("error", (err) => {
   process.exit(0);
 });
 
-server.listen(PORT, HOST, () => {
+server.listen(PORT, HOST, async () => {
   log(`Local Collab listening on ${APP_URL}, notes in ${NOTES_DIR}`);
   openBrowser();
   refreshIfStale();
   setInterval(refreshIfStale, AC_REFRESH_MS).unref();
+  try { await jobs.start(); jobsReady = true; log('Local Collab job runner ready'); }
+  catch (error) { jobs.error = error.message; log('Job runner unavailable:', error.message); }
 });
+server.on('close', () => { jobs.stop().catch(error => log('Job runner close:', error.message)); });

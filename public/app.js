@@ -4,8 +4,12 @@ import {MAX_IMAGE_BYTES,IMAGE_MARKDOWN,imageMarkdown,imageHtml,imageType} from '
 import {installImageEvents} from './image-events.mjs';
 import {highlightSearch} from './search-query.mjs';
 import {installInstructionsEditor} from './instructions.mjs';
+import {installJobs} from './jobs.mjs';
+import {installSettings} from './settings.mjs';
 
 let AUTHOR = "Human";
+installJobs(() => AUTHOR);
+installSettings();
 let storageLabel="Markdown files";
 let storageType="filesystem";
 const POLL_MS = 10_000;

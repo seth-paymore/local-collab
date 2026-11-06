@@ -1,0 +1,22 @@
+{
+  "name": "local-collab-desktop",
+  "productName": "Local Collab",
+  "version": "1.5.0",
+  "description": "Local Collab desktop app",
+  "license": "MIT",
+  "type": "module",
+  "main": "main.mjs",
+  "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "start": "electron .",
+    "package": "node build.mjs",
+    "smoke": "electron smoke.mjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "45.2.1"
+  }
+}
